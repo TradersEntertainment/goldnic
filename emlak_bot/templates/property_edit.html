@@ -6,10 +6,11 @@
   <div><div class="eyebrow">Mülk #{{ p.id }}</div><h1>Mülk bilgilerini düzenle</h1><div class="sub">Kira tutarı değişirse bu yıl için girilen planlı artış sıfırlanır.</div></div>
   <div class="actions"><a class="btn ghost" href="{{ url_for('property_view', pid=p.id) }}">{{ m.icon('arrow-left') }}Mülke dön</a></div>
 </div>
-<div class="card" style="max-width:860px">
+<div class="g-side">
+<div class="card">
   <form method="post">
     {{ m.csrf_field() }}
-    <div class="form-grid">
+    <div class="form-grid fluid">
       <div class="full"><label for="e_title">Mülk adı / adres *</label><input id="e_title" name="title" value="{{ f.get('title', p.title) }}" required></div>
       <div><label for="e_tn">Kiracı</label><input id="e_tn" name="tenant_name" value="{{ f.get('tenant_name', p.tenant_name or '') }}"></div>
       <div><label for="e_tp">Kiracı telefon</label><input id="e_tp" name="tenant_phone" type="tel" inputmode="tel" value="{{ f.get('tenant_phone', p.tenant_phone or '') }}"></div>
@@ -27,5 +28,25 @@
     </div>
     <div class="row mt16"><button class="btn" type="submit">{{ m.icon('check') }}Kaydet</button><a class="btn ghost" href="{{ url_for('property_view', pid=p.id) }}">Vazgeç</a></div>
   </form>
+</div>
+<div class="stack">
+  <div class="card gold">
+    <div class="card-h"><h2>{{ m.icon('home') }}Mevcut kayıt</h2><span class="badge {{ 'b-violet' if p.status == 'vacant' else 'b-ok' }}">{{ 'Boş' if p.status == 'vacant' else 'Aktif' }}</span></div>
+    <div class="kv">
+      <div>Kira</div><div><b>{{ p.rent|money }}</b></div>
+      <div>Yenileme</div><div>{{ p.renewal_date|tdate }}</div>
+      {% if p.planned_rent %}<div>Planlanan</div><div>{{ p.planned_pct|pct }} → {{ p.planned_rent|money }}</div>{% endif %}
+      <div>Kiracı</div><div>{{ p.tenant_name or '—' }}</div>
+      <div>Ev sahibi</div><div>{{ p.landlord_name or '—' }}</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-h"><h2>{{ m.icon('file') }}Diğer bilgiler</h2></div>
+    <div class="list">
+      <a class="item" href="{{ url_for('docs_center', pid=p.id) }}#bilgiler"><div class="i-ic">{{ m.icon('signature') }}</div><div class="i-body"><div class="i-title">Taraflar ve sözleşme şartları</div><div class="i-sub">T.C. kimlik, IBAN, adres, kefil, depozito, demirbaş — PDF belgeler için.</div></div></a>
+      <a class="item" href="{{ url_for('property_view', pid=p.id) }}#hukuk"><div class="i-ic">{{ m.icon('scale') }}</div><div class="i-body"><div class="i-title">Hukuki bilgiler</div><div class="i-sub">Sözleşme süresi, teslim tarihi, konut/işyeri, tahliye taahhüdü.</div></div></a>
+    </div>
+  </div>
+</div>
 </div>
 {% endblock %}

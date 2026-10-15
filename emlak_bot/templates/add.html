@@ -6,22 +6,43 @@
   <div><div class="eyebrow">Kira takibi</div><h1>Yeni mülk / kiracı</h1><div class="sub">Kaydettiğiniz anda kira yenileme takibi ve hukuki radar başlar.</div></div>
   {% if g.user.role == 'owner' %}<div class="actions"><a class="btn ghost" href="{{ url_for('bulk_import') }}">{{ m.icon('upload') }}Toplu giriş</a></div>{% endif %}
 </div>
-<div class="card" style="max-width:860px">
-  <form method="post">
-    {{ m.csrf_field() }}
-    <div class="form-grid">
-      <div class="full"><label for="a_title">Mülk adı / adres *</label><input id="a_title" name="title" value="{{ f.get('title','') }}" required autofocus placeholder="Örn: Yahya Kaptan Mah. Gül Sk. No:12 D:4 — 3+1"></div>
-      <div><label for="a_tn">Kiracı</label><input id="a_tn" name="tenant_name" value="{{ f.get('tenant_name','') }}"></div>
-      <div><label for="a_tp">Kiracı telefon</label><input id="a_tp" name="tenant_phone" type="tel" inputmode="tel" value="{{ f.get('tenant_phone','') }}" placeholder="0 5xx xxx xx xx"></div>
-      <div><label for="a_ln">Ev sahibi</label><input id="a_ln" name="landlord_name" value="{{ f.get('landlord_name','') }}"></div>
-      <div><label for="a_lp">Ev sahibi telefon</label><input id="a_lp" name="landlord_phone" type="tel" inputmode="tel" value="{{ f.get('landlord_phone','') }}"></div>
-      <div><label for="a_rent">Güncel aylık kira (₺) *</label><input id="a_rent" name="rent" inputmode="decimal" value="{{ f.get('rent','') }}" required placeholder="32.000"></div>
-      <div><label for="a_ren">Sonraki yenileme tarihi *</label><input id="a_ren" type="date" name="renewal_date" value="{{ f.get('renewal_date','') }}" required></div>
-      <div><label for="a_ls">Sözleşme başlangıç tarihi</label><input id="a_ls" type="date" name="lease_start_date" value="{{ f.get('lease_start_date','') }}"><div class="hint">Kiracıyla ilk sözleşme tarihi (5. ve 10. yıl hakları için).</div></div>
-      <div><label for="a_li">Geçen sene artış (%)</label><input id="a_li" name="last_increase_pct" inputmode="decimal" value="{{ f.get('last_increase_pct','') }}" placeholder="Örn: 35"></div>
-      <div class="full"><label for="a_notes">Not</label><textarea id="a_notes" name="notes" rows="2">{{ f.get('notes','') }}</textarea></div>
+<div class="g-side">
+  <div class="card">
+    <form method="post">
+      {{ m.csrf_field() }}
+      <div class="form-grid fluid">
+        <div class="full"><label for="a_title">Mülk adı / adres *</label><input id="a_title" name="title" value="{{ f.get('title','') }}" required autofocus placeholder="Örn: Yahya Kaptan Mah. Gül Sk. No:12 D:4 — 3+1"></div>
+        <div><label for="a_tn">Kiracı</label><input id="a_tn" name="tenant_name" value="{{ f.get('tenant_name','') }}"></div>
+        <div><label for="a_tp">Kiracı telefon</label><input id="a_tp" name="tenant_phone" type="tel" inputmode="tel" value="{{ f.get('tenant_phone','') }}" placeholder="0 5xx xxx xx xx"></div>
+        <div><label for="a_ln">Ev sahibi</label><input id="a_ln" name="landlord_name" value="{{ f.get('landlord_name','') }}"></div>
+        <div><label for="a_lp">Ev sahibi telefon</label><input id="a_lp" name="landlord_phone" type="tel" inputmode="tel" value="{{ f.get('landlord_phone','') }}"></div>
+        <div><label for="a_rent">Güncel aylık kira (₺) *</label><input id="a_rent" name="rent" inputmode="decimal" value="{{ f.get('rent','') }}" required placeholder="32.000"></div>
+        <div><label for="a_ren">Sonraki yenileme tarihi *</label><input id="a_ren" type="date" name="renewal_date" value="{{ f.get('renewal_date','') }}" required></div>
+        <div><label for="a_ls">Sözleşme başlangıç tarihi</label><input id="a_ls" type="date" name="lease_start_date" value="{{ f.get('lease_start_date','') }}"><div class="hint">Kiracıyla ilk sözleşme tarihi (5. ve 10. yıl hakları için).</div></div>
+        <div><label for="a_li">Geçen sene artış (%)</label><input id="a_li" name="last_increase_pct" inputmode="decimal" value="{{ f.get('last_increase_pct','') }}" placeholder="Örn: 35"></div>
+        <div class="full"><label for="a_notes">Not</label><textarea id="a_notes" name="notes" rows="2">{{ f.get('notes','') }}</textarea></div>
+      </div>
+      <button class="btn mt16" type="submit">{{ m.icon('check') }}Kaydet ve takibe al</button>
+    </form>
+  </div>
+  <div class="stack">
+    <div class="card gold">
+      <div class="card-h"><h2>{{ m.icon('sparkles') }}Kaydedince ne olur?</h2></div>
+      <ol class="steps">
+        <li><b>Kira hatırlatması:</b> yenilemeye 30 gün kala danışmana ve ofise Telegram bildirimi; aranmazsa kademeli tekrar.</li>
+        <li><b>Yasal tavan:</b> yenileme ayına göre TÜFE 12 aylık ortalaması otomatik uygulanır, aşan zam uyarılır.</li>
+        <li><b>Hukuk radarı:</b> sözleşme başlangıcı girildiyse 5. yıl kira tespiti ve 10. yıl tahliye hakkı izlenir.</li>
+        <li><b>Belgeler:</b> taraf bilgilerini tamamlayınca kira sözleşmesi ve tahliye taahhütnamesi tek tıkla PDF.</li>
+      </ol>
     </div>
-    <button class="btn mt16" type="submit">{{ m.icon('check') }}Kaydet ve takibe al</button>
-  </form>
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('arrow-right') }}Kısa yollar</h2></div>
+      <div class="list">
+        <a class="item" href="{{ url_for('listings_view') }}"><div class="i-ic">{{ m.icon('building') }}</div><div class="i-body"><div class="i-title">Sahibinden ilanını kiraya çevir</div><div class="i-sub">İlan kartında "Kiralandı" deyince mülk otomatik oluşur.</div></div></a>
+        {% if g.user.role == 'owner' %}<a class="item" href="{{ url_for('bulk_import') }}"><div class="i-ic">{{ m.icon('upload') }}</div><div class="i-body"><div class="i-title">Excel'den toplu giriş</div><div class="i-sub">100+ daireyi tek seferde aktarın; T.C., IBAN ve adres sütunları da tanınır.</div></div></a>{% endif %}
+        <a class="item" href="{{ url_for('talep_new') }}"><div class="i-ic">{{ m.icon('target') }}</div><div class="i-body"><div class="i-title">Müşteri talebi ekle</div><div class="i-sub">Daire arayan müşteriyi kaydedin; portföyle anında eşleşsin.</div></div></a>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}

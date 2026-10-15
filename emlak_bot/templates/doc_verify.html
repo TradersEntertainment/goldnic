@@ -5,7 +5,8 @@
 <div class="page-head">
   <div><div class="eyebrow">Güvenlik</div><h1>Belge doğrulama</h1><div class="sub">Basılı bir belgenin bu sistemde üretildiğini belge no veya doğrulama koduyla kontrol edin.</div></div>
 </div>
-<div class="card" style="max-width:720px">
+<div class="g-side">
+<div class="card">
   <form method="get" class="inline-form">
     <input name="kod" value="{{ q }}" placeholder="GN-2026-000042 veya 7F3A-91C2" autofocus aria-label="Belge no veya doğrulama kodu">
     <button class="btn" type="submit">{{ m.icon('shield') }}Doğrula</button>
@@ -19,5 +20,14 @@
     <div class="alert err mt16">{{ m.icon('alert') }}<div><b>Kayıt bulunamadı.</b> Bu numara veya kod bu sistemde üretilmiş bir belgeye ait değil.</div></div>
     {% endif %}
   {% endif %}
+</div>
+<div class="card">
+  <div class="card-h"><h2>{{ m.icon('shield') }}Nasıl çalışır?</h2></div>
+  <ol class="steps">
+    <li>Sistemde üretilen her belgenin altında <b>belge numarası</b> (GN-YYYY-NNNNNN) ve <b>doğrulama kodu</b> basılıdır.</li>
+    <li>Kod, belgenin içeriğinden gizli anahtarla üretilir; elle uydurulamaz.</li>
+    <li>Kayıt bulunursa düzenleme tarihi, düzenleyen ve PDF özeti gösterilir; basılı nüshayı bu bilgilerle karşılaştırın.</li>
+  </ol>
+</div>
 </div>
 {% endblock %}
