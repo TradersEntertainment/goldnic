@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block title %}İlan Portföyü — {{ brand }}{% endblock %}
+
+{% block body %}
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+  <div>
+    <h1 style="margin:0">🏢 Gold Nicomedia İlan Portföyü</h1>
+    <span class="mute">Sahibinden.com mağazasındaki güncel ilanlar ve danışman dağılımı</span>
+  </div>
+  <div>
+    <button type="button" class="btn" style="margin:0;display:inline-flex;align-items:center;gap:6px" onclick="openSyncModal()">
+      🔄 İlanları Güncelle / Çek
+    </button>
+  </div>
+</div>
+
+<!-- Özet İstatistik Kartları -->
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+  <div class="stat">
+    <b>{{ stats.total }}</b>
+    <span>Toplam Aktif İlan</span>
+  </div>
+  <div class="stat">
+    <b style="color:#0969da">{{ stats.kiralik }}</b>
+    <span>Kiralık Portföy</span>
+  </div>
+  <div class="stat">
+    <b style="color:#9a6700">{{ stats.satilik }}</b>
+    <span>Satılık Portföy</span>
+  </div>
+  <div class="stat">
+    <b style="color:#1a7f37">{% if stats.republished > 0 %}{{ stats.republished }}{% else %}0{% endif %}</b>
+    <span>30 Günlük Yenilenenler</span>
+  </div>
+</div>
+
+<!-- Filtre & Arama Alanı -->
+<div class="card" style="padding:14px;margin-bottom:20px">
+  <form method="get" action="{{ url_for('listings_view') }}" style="display:flex;flex-direction:column;gap:12px">
+    
+    <!-- Danışman Filtresi -->
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:13px;font-weight:600;color:var(--mute)">Danışman:</span>
+      <a href="{{ url_for('listings_view', tur=selected_type, q=search_query) }}" 
+         class="btn sm {% if not selected_consultant %}btn{% else %}alt{% endif %}">
+        Tümü ({{ stats.total }})
+      </a>
+      {% for c in stats.consultants %}
+      <a href="{{ url_for('listings_view', danisman=c.name, tur=selected_type, q=search_query) }}" 
+         class="btn sm {% if selected_consultant == c.name %}btn{% else %}alt{% endif %}">
+        👤 {{ c.name }} ({{ c.count }})
+      </a>
+      {% endfor %}
+    </div>
+
+    <!-- Tür ve Arama Çubuğu -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <div style="display:flex;gap:6px">
+        <a href="{{ url_for('listings_view', danisman=selected_consultant, q=search_query) }}" 
+           class="btn sm {% if not selected_type %}btn{% else %}alt{% endif %}">Tüm Türler</a>
+        <a href="{{ url_for('listings_view', danisman=selected_consultant, tur='kiralik', q=search_query) }}" 
+           class="btn sm {% if selected_type == 'kiralik' %}btn{% else %}alt{% endif %}">Kiralık ({{ stats.kiralik }})</a>
+        <a href="{{ url_for('listings_view', danisman=selected_consultant, tur='satilik', q=search_query) }}" 
+           class="btn sm {% if selected_type == 'satilik' %}btn{% else %}alt{% endif %}">Satılık ({{ stats.satilik }})</a>
+      </div>
+
+      <div style="flex:1;min-width:220px;display:flex;gap:6px">
+        {% if selected_consultant %}<input type="hidden" name="danisman" value="{{ selected_consultant }}">{% endif %}
+        {% if selected_type %}<input type="hidden" name="tur" value="{{ selected_type }}">{% endif %}
+        <input type="search" name="q" value="{{ search_query }}" placeholder="İlan başlığı, mahalle veya ilan no ile ara..." style="flex:1">
+        <button type="submit" class="btn sm" style="margin:0">Ara</button>
+        {% if search_query or selected_consultant or selected_type %}
+        <a href="{{ url_for('listings_view') }}" class="btn sm alt" style="margin:0">Sıfırla</a>
+        {% endif %}
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- İlan Listesi / Kartlar -->
+{% if items %}
+<div style="margin-bottom:10px;font-size:13px;color:var(--mute)">
+  Toplam <b>{{ items|length }}</b> ilan listeleniyor.
+</div>
+<div class="cards-grid">
+  {% for it in items %}
+  <div class="lcard">
+    <div class="lcard-thumb">
+      {% if it.image_url %}
+      <img src="{{ it.image_url }}" alt="{{ it.title }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div class="no-img" style="display:none">🏢 {{ brand }}</div>
+      {% else %}
+      <div class="no-img">🏢 {{ brand }}</div>
+      {% endif %}
+      <div class="lcard-badges">
+        {% if it.listing_type == 'kiralik' %}
+        <span class="badge badge-kiralik">KİRALIK</span>
+        {% elif it.listing_type == 'satilik' %}
+        <span class="badge badge-satilik">SATILIK</span>
+        {% else %}
+        <span class="badge badge-agent">{{ it.listing_type }}</span>
+        {% endif %}
+
+        {% if it.republish_count and it.republish_count > 1 %}
+        <span class="badge badge-renew" title="Sahibinden 30 günde bir tekrar girildiğinde sistem mükerrer kayıt oluşturmadı, bu ilanı güncelledi!">
+          🔄 {{ it.republish_count }}. Kez Yenilendi
+        </span>
+        {% endif %}
+
+        {% if it.linked_prop_id %}
+        <span class="badge badge-active" title="Kira takip sisteminde kayıtlı">✓ KİRA TAKİBİNDE</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="lcard-body">
+      <div class="lcard-price">{{ it.price_str }}</div>
+      <h3 class="lcard-title" title="{{ it.title }}">{{ it.title }}</h3>
+      <div class="lcard-meta">
+        <span>📍 {{ it.location or 'Kocaeli' }}</span>
+        <span>📅 {{ it.publish_date or 'Güncel' }}</span>
+      </div>
+    </div>
+
+    <div class="lcard-consultant">
+      <div>
+        <strong>👤 {{ it.consultant_name }}</strong>
+      </div>
+      {% if it.consultant_phone %}
+      <div>
+        <a href="tel:{{ it.consultant_phone }}" class="mute" style="text-decoration:none">📞 {{ it.consultant_phone }}</a>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="lcard-actions">
+      <a href="{{ it.url }}" target="_blank" rel="noopener" class="btn sm alt" style="flex:1" title="İlanı Sahibinden'de aç">
+        Sahibinden ↗
+      </a>
+      {% if it.listing_type == 'kiralik' %}
+        {% if it.linked_prop_id %}
+        <a href="{{ url_for('property_view', pid=it.linked_prop_id) }}" class="btn sm ok" style="flex:1" title="Kira artış takip detayına git">
+          Takipte (#{{ it.linked_prop_id }})
+        </a>
+        {% else %}
+        <form method="post" action="{{ url_for('listing_track', lid=it.id) }}" style="flex:1;display:inline">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <button type="submit" class="btn sm" style="width:100%" title="Bu kiralık daireyi kira artış ve hatırlatma sistemine aktar">
+            📋 Takibe Al
+          </button>
+        </form>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="card" style="text-align:center;padding:40px 20px">
+  <div style="font-size:36px;margin-bottom:12px">🔍</div>
+  <h2>Filtrenize uygun ilan bulunamadı</h2>
+  <p class="mute">Farklı bir arama kelimesi deneyebilir veya tüm ilanları listelemek için filtreleri sıfırlayabilirsiniz.</p>
+  <a href="{{ url_for('listings_view') }}" class="btn alt">Tüm İlanları Göster</a>
+</div>
+{% endif %}
+
+<!-- Senkronizasyon / Güncelleme Modalı -->
+<div id="syncModal" class="modal-overlay" onclick="if(event.target===this)closeSyncModal()">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:10px">
+      <h2 style="margin:0">🔄 İlanları Güncelle ve Senkronize Et</h2>
+      <button type="button" onclick="closeSyncModal()" style="background:none;border:0;font-size:22px;cursor:pointer;color:var(--mute)">&times;</button>
+    </div>
+
+    <p style="font-size:13px;color:var(--mute);margin-top:0">
+      Sahibinden.com bot korumasını aşmak ve 30 günde bir tekrar girilen ilanları <b>mükerrer kayıt yaratmadan</b> güncellemek için aşağıdaki yöntemleri kullanabilirsiniz:
+    </p>
+
+    <!-- Tab Seçici -->
+    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:10px">
+      <button type="button" class="btn sm" id="tabBtn1" onclick="switchTab(1)">⚡ Hızlı Yenile (64 İlan)</button>
+      <button type="button" class="btn sm alt" id="tabBtn2" onclick="switchTab(2)">📋 Sayfa HTML Yapıştır</button>
+      <button type="button" class="btn sm alt" id="tabBtn3" onclick="switchTab(3)">🔖 1-Tık Yer İmi (Bookmarklet)</button>
+    </div>
+
+    <!-- Tab 1: Varsayılan Yenileme -->
+    <div id="tab1">
+      <div style="background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
+        <strong>Hazır Depo Senkronizasyonu:</strong>
+        <p style="margin:6px 0 0;color:var(--mute)">
+          Gold Nicomedia mağazasından taranmış tüm güncel ilanları (Burkay Yıldırım: 39, Diren Doğan: 10, Ecenaz Öztekin: 10, Erkan Kartay: 5) veritabanına yeniden aktarır. 30 günde bir yenilenen ilanlar varsa mevcut kayıtların üzerine güncellenir.
+        </p>
+      </div>
+      <form method="post" action="{{ url_for('listings_sync') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="seed">
+        <button type="submit" class="btn ok" style="width:100%">Tüm 64 İlanı Veritabanına Yükle / Senkronize Et</button>
+      </form>
+    </div>
+
+    <!-- Tab 2: HTML Kaynağı Yapıştır -->
+    <div id="tab2" style="display:none">
+      <form method="post" action="{{ url_for('listings_sync') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="html">
+
+        <label for="consultant_name">İlan Danışmanı (Varsayılan):</label>
+        <select name="consultant_name" id="consultant_name">
+          <option value="Diren Doğan">Diren Doğan (0 532 060 28 02)</option>
+          <option value="Burkay Yıldırım">Burkay Yıldırım (0 552 716 41 77)</option>
+          <option value="Ecenaz Öztekin">Ecenaz Öztekin (0 552 715 41 77)</option>
+          <option value="Erkan Kartay">Erkan Kartay (0 552 697 41 77)</option>
+          <option value="Gold Nicomedia">Gold Nicomedia Genel</option>
+        </select>
+
+        <label for="html_content">Sahibinden Mağaza Sayfa Kaynağı (HTML veya JSON):</label>
+        <textarea name="content" id="html_content" rows="6" placeholder="Sahibinden mağaza sayfasındayken sağ tık -> 'Sayfa Kaynağını Görüntüle' (Ctrl+U) yapıp tümünü buraya yapıştırabilirsiniz." required></textarea>
+
+        <button type="submit" class="btn" style="width:100%">İlanları Ayrıştır ve Kaydet</button>
+      </form>
+    </div>
+
+    <!-- Tab 3: Bookmarklet -->
+    <div id="tab3" style="display:none;font-size:13px">
+      <p>Tarayıcınızın yer imleri çubuğuna aşağıdaki bağlantıyı sürükleyip bırakın veya kodunu kopyalayın:</p>
+      
+      <div style="background:#f4f6f9;padding:10px;border-radius:6px;border:1px solid #cfd6df;font-family:monospace;font-size:11px;word-break:break-all;user-select:all">
+        javascript:(function(){const html=document.documentElement.outerHTML;navigator.clipboard.writeText(html).then(()=>{alert('Sahibinden sayfa içeriği panoya kopyalandı! Gold Nicomedia panelinde HTML Yapıştır sekmesine gidip yapıştırabilirsiniz.');}).catch(()=>{alert('Kopyalanamadı, lütfen Ctrl+U ile sayfa kaynağını alın.');});})();
+      </div>
+
+      <p style="color:var(--mute);margin-top:10px">
+        <strong>Nasıl Kullanılır?</strong><br>
+        1. <code>goldnicomedia.sahibinden.com</code> sayfasındayken yer imine tıklayın.<br>
+        2. Sayfa içeriği otomatik panoya kopyalanır.<br>
+        3. Buradaki "Sayfa HTML Yapıştır" kutusuna Ctrl+V ile yapıştırıp "Kaydet"e basın!
+      </p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function openSyncModal() {
+  document.getElementById('syncModal').classList.add('active');
+}
+function closeSyncModal() {
+  document.getElementById('syncModal').classList.remove('active');
+}
+function switchTab(idx) {
+  for(let i=1; i<=3; i++) {
+    document.getElementById('tab' + i).style.display = (i === idx) ? 'block' : 'none';
+    const btn = document.getElementById('tabBtn' + i);
+    if(i === idx) {
+      btn.classList.remove('alt');
+    } else {
+      btn.classList.add('alt');
+    }
+  }
+}
+</script>
+{% endblock %}

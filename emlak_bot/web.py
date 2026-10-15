@@ -43,6 +43,14 @@ def validate_password(p: str) -> str:
 
 
 def create_app(db: Database, cfg: Config) -> Flask:
+    from .scraper import seed_initial_listings, sync_listings_data
+
+    # Başlangıçta kayıtlı ilan yoksa initial_listings.json dosyasını yükle
+    try:
+        seed_initial_listings(db)
+    except Exception as e:
+        log.warning("İlk ilan tohumlaması yapılamadı: %s", e)
+
     app = Flask(__name__)
     app.secret_key = cfg.secret_key
     app.config.update(
@@ -50,7 +58,7 @@ def create_app(db: Database, cfg: Config) -> Flask:
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=cfg.cookie_secure,
         PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
-        MAX_CONTENT_LENGTH=64 * 1024,
+        MAX_CONTENT_LENGTH=16 * 1024 * 1024,
     )
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     app.jinja_env.filters.update(money=R.money, pct=R.pct_str, tdate=R.fmt_date)
@@ -76,6 +84,17 @@ def create_app(db: Database, cfg: Config) -> Flask:
             else:
                 session.clear()
         if request.method == "POST":
+            # API senkronizasyon rotası için oturum kontrolü veya CSRF kontrolü
+            if request.path.startswith("/api/sahibinden/sync"):
+                header_csrf = request.headers.get("X-CSRF-Token", "")
+                form_csrf = request.form.get("csrf", "")
+                expected = session.get("csrf", "")
+                if expected and (hmac.compare_digest(header_csrf, expected) or hmac.compare_digest(form_csrf, expected)):
+                    return
+                if not g.user:
+                    abort(401, "Giriş yapmalısınız.")
+                return
+
             sent = request.form.get("csrf", "")
             expected = session.get("csrf", "")
             if not expected or not hmac.compare_digest(sent, expected):
@@ -284,5 +303,102 @@ def create_app(db: Database, cfg: Config) -> Flask:
     def activity():
         uid = request.args.get("user", type=int)
         return render_template("activity.html", rows=db.recent_activity(uid, 100))
+
+    # ------------------------------------------------------------ sahibinden ilanları
+    @app.get("/ilanlar")
+    @login_required()
+    def listings_view():
+        consultant = request.args.get("danisman") or None
+        listing_type = request.args.get("tur") or None
+        search = request.args.get("q") or None
+
+        items = db.list_sahibinden_listings(
+            consultant=consultant,
+            listing_type=listing_type,
+            search=search,
+        )
+        stats = db.get_sahibinden_stats()
+        return render_template(
+            "listings.html",
+            items=items,
+            stats=stats,
+            selected_consultant=consultant,
+            selected_type=listing_type,
+            search_query=search or "",
+        )
+
+    @app.post("/ilanlar/sync")
+    @login_required()
+    def listings_sync():
+        action = request.form.get("action", "html")
+        if action == "seed":
+            res = seed_initial_listings(db, force=True)
+            flash(
+                f"İlanlar güncellendi: {res['total']} ilan ({res['created']} yeni, {res['updated']} güncel, {res['republished']} 30 günlük yenilenen).",
+                "ok",
+            )
+        else:
+            payload = request.form.get("content", "").strip()
+            c_name = request.form.get("consultant_name", "Gold Nicomedia").strip()
+            c_phone = request.form.get("consultant_phone", "0 (532) 060 28 02").strip()
+            if not payload:
+                flash("İçerik boş olamaz. Lütfen HTML veya JSON yapıştırın.", "err")
+                return redirect(url_for("listings_view"))
+            res = sync_listings_data(
+                {"html": payload, "consultant": c_name, "phone": c_phone}, db
+            )
+            flash(
+                f"Senkronizasyon tamamlandı: {res['processed']} ilan işlendi "
+                f"({res['created']} yeni, {res['updated']} güncellendi, {res['republished']} 30 günlük yenilenen ilan tespit edildi).",
+                "ok",
+            )
+        return redirect(url_for("listings_view"))
+
+    @app.post("/api/sahibinden/sync")
+    @login_required()
+    def api_sync():
+        data = request.get_json(silent=True) or request.form.to_dict()
+        res = sync_listings_data(data, db)
+        return {"status": "ok", "stats": res}
+
+    @app.post("/ilanlar/<int:lid>/takibe-al")
+    @login_required()
+    def listing_track(lid: int):
+        item = db.get_sahibinden_listing(lid)
+        if not item:
+            abort(404)
+        if item["property_id"]:
+            flash(f"Bu ilan zaten kira takibinde (#{item['property_id']}).", "ok")
+            return redirect(url_for("property_view", pid=item["property_id"]))
+
+        # 1 yıl sonrasını varsayılan yenileme tarihi yap
+        renewal = (today() + timedelta(days=365)).isoformat()
+        agent_id = item["consultant_id"] if item["consultant_id"] else g.user["id"]
+        title = item["title"]
+        rent = float(item["price"] or 0.0)
+
+        prop_id = db.add_property(
+            agent_id=agent_id,
+            title=title,
+            rent=rent,
+            renewal_date=renewal,
+            notes=(
+                f"Sahibinden ilanı #{item['classified_id']} üzerinden aktarıldı. "
+                f"Danışman: {item['consultant_name']} ({item['consultant_phone']}). "
+                f"Konum: {item['location']}"
+            ),
+            status="active",
+        )
+        db.link_sahibinden_to_property(lid, prop_id)
+        db.log(g.user["id"], "sahibinden_kira_takibine_aldi", prop_id, title)
+        notify_owners(
+            f"📋 {texts.esc(g.user['name'])} (web), Sahibinden ilanını kira takibine aldı: "
+            f"<b>{texts.esc(title)}</b> (#{prop_id}) — Kira: {R.money(rent)}"
+        )
+        flash(
+            f"'{title}' başarıyla kira takibine alındı! Buradan kira artış tarihi ve planlanan zam oranını belirleyebilirsiniz.",
+            "ok",
+        )
+        return redirect(url_for("property_view", pid=prop_id))
 
     return app

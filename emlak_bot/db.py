@@ -75,6 +75,28 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sahibinden_listings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    classified_id TEXT UNIQUE,
+    title TEXT NOT NULL,
+    normalized_title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    image_url TEXT,
+    price REAL,
+    price_str TEXT,
+    listing_type TEXT NOT NULL DEFAULT 'kiralik',
+    location TEXT,
+    publish_date TEXT,
+    consultant_name TEXT NOT NULL,
+    consultant_phone TEXT,
+    consultant_id INTEGER REFERENCES users(id),
+    property_id INTEGER REFERENCES properties(id),
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    republish_count INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'active'
+);
+CREATE INDEX IF NOT EXISTS ix_shbdn_norm ON sahibinden_listings(consultant_name, listing_type, normalized_title);
 """
 
 EDITABLE_PROPERTY_COLUMNS = {
@@ -294,3 +316,125 @@ class Database:
             " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
         )
+
+    # ---- sahibinden ilanları & 30 günlük tekrar yayın koruması ----
+    def upsert_sahibinden_listing(self, item: dict) -> tuple[int, str]:
+        """
+        Sahibinden ilanını kaydeder veya günceller.
+        30 günlük yenilemelerde aynı başlık + danışman eşleştiğinde mükerrer kayıt oluşturmaz,
+        mevcut kaydı yeni classified_id ile günceller ve republish_count'u artırır.
+        """
+        now = now_iso()
+        cid = str(item.get("cid") or item.get("classified_id") or "").strip()
+        title = (item.get("title") or "").strip()
+        norm = normalize_title(title)
+        c_name = (item.get("consultant_name") or "Gold Nicomedia").strip()
+        c_phone = (item.get("consultant_phone") or "").strip()
+        ltype = item.get("listing_type", "kiralik")
+        price = float(item.get("price") or 0.0)
+        price_str = item.get("price_raw") or item.get("price_str") or f"{price:,.0f} TL"
+        url = item.get("url", "")
+        img = item.get("img") or item.get("image_url") or ""
+        loc = item.get("location", "")
+        pdate = item.get("date") or item.get("publish_date") or ""
+
+        # Danışmanı users tablosunda bul veya oluştur
+        agent = self.one("SELECT id FROM users WHERE name=?", (c_name,))
+        if not agent:
+            agent_id = self.add_user(chat_id=c_name, name=c_name, role="agent", channel="web")
+        else:
+            agent_id = agent["id"]
+
+        # 1. Classified ID birebir eşleşiyor mu?
+        existing = self.one("SELECT * FROM sahibinden_listings WHERE classified_id=?", (cid,))
+        if existing:
+            self.execute(
+                "UPDATE sahibinden_listings SET title=?, normalized_title=?, url=?, image_url=?, price=?, "
+                "price_str=?, location=?, publish_date=?, consultant_name=?, consultant_phone=?, consultant_id=?, "
+                "last_seen=?, status='active' WHERE id=?",
+                (title, norm, url, img, price, price_str, loc, pdate, c_name, c_phone, agent_id, now, existing["id"]),
+            )
+            return existing["id"], "updated"
+
+        # 2. 30 günlük tekrar yayın tespiti:
+        # Aynı danışman, aynı ilan türü ve aynı normalize edilmiş başlık var mı?
+        republished = self.one(
+            "SELECT * FROM sahibinden_listings WHERE consultant_name=? AND listing_type=? AND normalized_title=?",
+            (c_name, ltype, norm),
+        )
+        if republished:
+            # 30 GÜNLÜK TEKRAR YAYINLANDI! Mevcut kaydı yeni ilan numarası ile güncelle
+            self.execute(
+                "UPDATE sahibinden_listings SET classified_id=?, url=?, image_url=?, price=?, price_str=?, "
+                "publish_date=?, last_seen=?, republish_count=republish_count+1, status='active' WHERE id=?",
+                (cid, url, img, price, price_str, pdate, now, republished["id"]),
+            )
+            if republished["property_id"]:
+                self.execute("UPDATE properties SET rent=? WHERE id=?", (price, republished["property_id"]))
+            return republished["id"], "republished"
+
+        # 3. Yepyeni bir ilan
+        new_id = self.execute(
+            "INSERT INTO sahibinden_listings (classified_id, title, normalized_title, url, image_url, price, "
+            "price_str, listing_type, location, publish_date, consultant_name, consultant_phone, consultant_id, "
+            "first_seen, last_seen, republish_count, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,'active')",
+            (cid, title, norm, url, img, price, price_str, ltype, loc, pdate, c_name, c_phone, agent_id, now, now),
+        )
+        return new_id, "created"
+
+    def list_sahibinden_listings(
+        self, consultant: str | None = None, listing_type: str | None = None, search: str | None = None
+    ) -> list[sqlite3.Row]:
+        sql = "SELECT s.*, p.id AS linked_prop_id FROM sahibinden_listings s LEFT JOIN properties p ON p.id=s.property_id WHERE s.status='active'"
+        params: list[Any] = []
+        if consultant:
+            sql += " AND s.consultant_name=?"
+            params.append(consultant)
+        if listing_type:
+            sql += " AND s.listing_type=?"
+            params.append(listing_type)
+        if search:
+            sql += " AND (s.title LIKE ? OR s.location LIKE ? OR s.classified_id LIKE ?)"
+            pat = f"%{search}%"
+            params.extend([pat, pat, pat])
+        sql += " ORDER BY s.republish_count DESC, s.id DESC"
+        return self.query(sql, params)
+
+    def get_sahibinden_listing(self, lid: int):
+        return self.one("SELECT * FROM sahibinden_listings WHERE id=?", (lid,))
+
+    def get_sahibinden_stats(self) -> dict[str, Any]:
+        total = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='active'")["c"]
+        kiralik = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='active' AND listing_type='kiralik'")["c"]
+        satilik = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='active' AND listing_type='satilik'")["c"]
+        republished = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='active' AND republish_count > 1")["c"]
+        consultants = self.query(
+            "SELECT consultant_name AS name, consultant_phone AS phone, COUNT(*) AS count "
+            "FROM sahibinden_listings WHERE status='active' GROUP BY consultant_name ORDER BY count DESC"
+        )
+        return {
+            "total": total,
+            "kiralik": kiralik,
+            "satilik": satilik,
+            "republished": republished,
+            "consultants": [dict(c) for c in consultants],
+        }
+
+    def link_sahibinden_to_property(self, listing_id: int, property_id: int) -> None:
+        self.execute("UPDATE sahibinden_listings SET property_id=? WHERE id=?", (property_id, listing_id))
+
+
+def normalize_title(title: str) -> str:
+    import re
+    tr_map = str.maketrans({
+        "İ": "i", "I": "i", "ı": "i", "i": "i",
+        "Ğ": "g", "ğ": "g",
+        "Ü": "u", "ü": "u",
+        "Ş": "s", "ş": "s",
+        "Ö": "o", "ö": "o",
+        "Ç": "c", "ç": "c",
+    })
+    s = (title or "").translate(tr_map).lower()
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    return " ".join(s.split())
+
