@@ -110,3 +110,26 @@ def test_group_receives_reminder_and_digest(db):
     m2 = FakeMessenger()
     asyncio.run(run_owner_digest(db, m2, 7, today, group_chat_id="-1001234"))
     assert "-1001234" in {c for c, _ in m2.sent}
+
+
+def test_setup_code_makes_owner(db):
+    from types import SimpleNamespace as NS
+    from emlak_bot import handlers
+
+    sent = []
+
+    class Msg:
+        async def reply_text(self, text, **kw):
+            sent.append(text)
+
+    def make_update(uid):
+        return NS(effective_user=NS(id=uid, full_name="Musteri"), effective_chat=NS(type="private"),
+                  effective_message=Msg())
+
+    cfg = NS(setup_code="gizli-kod", owner_ids=frozenset(), group_chat_id="")
+    ctx = NS(application=NS(bot_data={"db": db, "cfg": cfg}), args=["yanlis"])
+    asyncio.run(handlers.cmd_setup(make_update(99), ctx))
+    assert db.get_user_by_chat(99) is None  # yanlış kod
+    ctx.args = ["gizli-kod"]
+    asyncio.run(handlers.cmd_setup(make_update(99), ctx))
+    assert db.get_user_by_chat(99)["role"] == "owner"

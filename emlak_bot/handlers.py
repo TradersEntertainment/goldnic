@@ -147,6 +147,32 @@ async def cmd_help(update: Update, ctx, user):
     await reply(update, "\n".join(t))
 
 
+async def cmd_setup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/kurulum KOD → SETUP_CODE doğruysa kullanıcıyı ofis sahibi yapar (özel sohbette)."""
+    import hmac
+
+    db, cfg, tg = _db(ctx), _cfg(ctx), update.effective_user
+    if update.effective_chat.type != "private":
+        await reply(update, "🔒 Bu komutu botla özel sohbette yazın.")
+        return
+    if not cfg.setup_code:
+        await reply(update, "Kurulum kodu tanımlı değil.")
+        return
+    if not ctx.args or not hmac.compare_digest(ctx.args[0].encode(), cfg.setup_code.encode()):
+        await reply(update, "❌ Kurulum kodu hatalı.")
+        return
+    user = db.get_user_by_chat(tg.id)
+    if user is None:
+        uid = db.add_user(tg.id, tg.full_name, "owner")
+    else:
+        uid = user["id"]
+        db.execute("UPDATE users SET role='owner', active=1 WHERE id=?", (uid,))
+    db.log(uid, "kurulum_koduyla_sahip_oldu", detail=tg.full_name)
+    await reply(update, "✅ Ofis sahibi olarak kaydoldunuz. /yardim\n\n"
+                        "⚠️ Güvenlik için Railway'den <code>SETUP_CODE</code> değişkenini silin; "
+                        "kod bilen herkes sahip olabilir.")
+
+
 async def cmd_join(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     db, tg = _db(ctx), update.effective_user
     if db.get_user_by_chat(tg.id):
@@ -637,6 +663,7 @@ def register(app) -> None:
     app.add_handler(CommandHandler(["yardim", "help"], cmd_help))
     app.add_handler(CommandHandler("katil", cmd_join))
     app.add_handler(CommandHandler("chatid", cmd_chatid))
+    app.add_handler(CommandHandler("kurulum", cmd_setup))
     app.add_handler(add_conversation())
     for names, fn in [
         ("liste", cmd_list), ("yaklasan", cmd_upcoming), ("mulk", cmd_property), ("zam", cmd_zam),

@@ -28,7 +28,8 @@ Emlakçıların portföyünü tek yerde toplar; kira yenileme zamanı geldiğind
 > Sadece **tek** replika çalıştırın (Telegram botu aynı anda iki yerde çalışamaz).
 
 ## 3) Kullanıcılar nasıl giriş yapar
-1. Ofis sahibi bota `/start` yazar → otomatik sahip olarak kaydolur.
+1. Ofis sahibi bota `/start` yazar → otomatik sahip olarak kaydolur (`OWNER_TELEGRAM_IDS` ayarlıysa).
+   **ID bilinmiyorsa:** `OWNER_TELEGRAM_IDS`'i boş bırakıp Railway'e `SETUP_CODE=uzun-gizli-bir-kod` ekle. Sahip bota özelden `/kurulum uzun-gizli-bir-kod` yazar → sahip olur. Sonra `SETUP_CODE` değişkenini sil.
 2. `/davet` → kod üretir. Emlakçı bota `/katil KOD` yazar.
 3. Herkes (sahip dahil) bota `/sifre kullaniciadi` yazar → bot **kullanıcı adı + rastgele şifre** verir.
 4. `WEB_URL` adresinden giriş yapılır; şifre "Hesabım" sayfasından değiştirilir.

@@ -32,8 +32,11 @@ def main() -> None:
     cfg = load_config()
     if not cfg.bot_token:
         raise SystemExit("TELEGRAM_BOT_TOKEN tanımlı değil.")
+    if not cfg.owner_ids and not cfg.setup_code:
+        raise SystemExit("OWNER_TELEGRAM_IDS veya SETUP_CODE değişkenlerinden en az biri tanımlı olmalı.")
     if not cfg.owner_ids:
-        raise SystemExit("OWNER_TELEGRAM_IDS tanımlı değil (ofis sahibinin Telegram ID'si).")
+        logging.getLogger("emlak_bot").warning(
+            "Ofis sahibi tanımlı değil: sahip botta /kurulum KURULUM_KODU yazarak kaydolmalı.")
 
     app = Application.builder().token(cfg.bot_token).build()
     db = Database(cfg.db_path)

@@ -25,6 +25,7 @@ class Config:
     cookie_secure: bool
     web_url: str
     group_chat_id: str = ""
+    setup_code: str = ""
 
 
 def load_config() -> Config:
@@ -61,4 +62,5 @@ def load_config() -> Config:
         cookie_secure=os.getenv("COOKIE_SECURE", "1" if on_railway else "0") == "1",
         web_url=os.getenv("WEB_URL", "").rstrip("/"),
         group_chat_id=group,
+        setup_code=os.getenv("SETUP_CODE", "").strip(),
     )
