@@ -93,3 +93,13 @@ def test_add_property_via_web(env):
                               "csrf": csrf(c, "/ekle")})
     assert r.status_code == 302
     assert any(p["title"] == "Yeni" and p["rent"] == 25000 for p in db.list_properties())
+
+
+def test_seed_admin_and_direct_login(env):
+    app, db, *_ = env
+    db.seed_admin("testadmin", "TestSecret123!")
+    c = app.test_client()
+    r = login(c, "testadmin", "TestSecret123!")
+    assert r.status_code == 302
+    page = c.get("/").get_data(as_text=True)
+    assert "Ofis paneli" in page

@@ -115,11 +115,16 @@ def create_app(db: Database, cfg: Config) -> Flask:
     def notify_owners(text: str) -> None:
         if not cfg.bot_token:
             return
+        target_ids = set()
         for o in db.list_users("owner"):
-            if o["id"] != g.user["id"] and o["channel"] == "telegram":
-                send_telegram_sync(cfg.bot_token, o["chat_id"], text)
-        if cfg.group_chat_id:
-            send_telegram_sync(cfg.bot_token, cfg.group_chat_id, text)
+            if o["id"] != (g.user["id"] if g.user else None) and o["channel"] == "telegram":
+                target_ids.add(o["chat_id"])
+        if cfg.chat_id:
+            target_ids.add(cfg.chat_id)
+        elif cfg.group_chat_id:
+            target_ids.add(cfg.group_chat_id)
+        for cid in target_ids:
+            send_telegram_sync(cfg.bot_token, cid, text)
 
     def today() -> date:
         return datetime.now(cfg.tz).date()

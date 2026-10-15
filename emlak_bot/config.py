@@ -25,8 +25,11 @@ class Config:
     cookie_secure: bool
     web_url: str
     group_chat_id: str = ""
+    chat_id: str = ""
     setup_code: str = ""
     brand_name: str = "Gold Nicomedia"
+    admin_username: str = ""
+    admin_password: str = ""
 
 
 def load_config() -> Config:
@@ -39,11 +42,15 @@ def load_config() -> Config:
             "@userinfobot'a /start yazıp 'Id' değerini alın (örn. 123456789)."
         )
     owners = {int(x) for x in raw_owners}
-    group = os.getenv("GROUP_CHAT_ID", "").strip()
-    if group and not group.lstrip("-").isdigit():
+    target_chat = (
+        os.getenv("TELEGRAM_CHAT_ID")
+        or os.getenv("CHAT_ID")
+        or os.getenv("GROUP_CHAT_ID")
+        or ""
+    ).strip()
+    if target_chat and not target_chat.lstrip("-").isdigit():
         raise SystemExit(
-            f"GROUP_CHAT_ID sayısal olmalı (grup ID'leri genelde -100... ile başlar): {group!r}. "
-            "Gruba botu ekleyip grupta /chatid yazın."
+            f"CHAT_ID sayısal olmalı (bireysel ID veya gruplar için -100...): {target_chat!r}."
         )
     secret = os.getenv("SECRET_KEY", "")
     if not secret:
@@ -51,7 +58,7 @@ def load_config() -> Config:
         secret = secrets.token_hex(32)
     on_railway = bool(os.getenv("RAILWAY_ENVIRONMENT"))
     return Config(
-        bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
+        bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
         owner_ids=frozenset(owners),
         db_path=os.getenv("DB_PATH") or ("/data/emlak.db" if os.path.isdir("/data") else "emlak.db"),
         tz=ZoneInfo(os.getenv("TIMEZONE", "Europe/Istanbul")),
@@ -62,7 +69,10 @@ def load_config() -> Config:
         web_enabled=os.getenv("WEB_ENABLED", "1") != "0",
         cookie_secure=os.getenv("COOKIE_SECURE", "1" if on_railway else "0") == "1",
         web_url=os.getenv("WEB_URL", "").rstrip("/"),
-        group_chat_id=group,
+        group_chat_id=target_chat,
+        chat_id=target_chat,
         setup_code=os.getenv("SETUP_CODE", "").strip(),
         brand_name=os.getenv("BRAND_NAME", "Gold Nicomedia").strip() or "Gold Nicomedia",
+        admin_username=os.getenv("ADMIN_USERNAME", "").strip().lower(),
+        admin_password=os.getenv("ADMIN_PASSWORD", "").strip(),
     )

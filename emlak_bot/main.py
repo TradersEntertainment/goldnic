@@ -33,25 +33,43 @@ def main() -> None:
     for noisy in ("httpx", "httpcore"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     cfg = load_config()
-    if not cfg.bot_token:
-        raise SystemExit("TELEGRAM_BOT_TOKEN tanımlı değil.")
-    if not cfg.owner_ids and not cfg.setup_code:
-        raise SystemExit("OWNER_TELEGRAM_IDS veya SETUP_CODE değişkenlerinden en az biri tanımlı olmalı.")
-    if not cfg.owner_ids:
-        logging.getLogger("emlak_bot").warning(
-            "Ofis sahibi tanımlı değil: sahip botta /kurulum KURULUM_KODU yazarak kaydolmalı.")
 
-    app = Application.builder().token(cfg.bot_token).build()
     db = Database(cfg.db_path)
     logging.getLogger("emlak_bot").info("Veritabanı: %s", cfg.db_path)
+
+    # Web yöneticisi env üzerinden verilmişse oluştur/güncelle
+    if cfg.admin_username and cfg.admin_password:
+        admin_id = db.seed_admin(cfg.admin_username, cfg.admin_password)
+        logging.getLogger("emlak_bot").info("Web yöneticisi aktif: %s (id: %s)", cfg.admin_username, admin_id)
+
+    if cfg.chat_id:
+        logging.getLogger("emlak_bot").info("Telegram bildirim hedefi (CHAT_ID): %s", cfg.chat_id)
+
+    if cfg.web_enabled:
+        _start_web(db, cfg)
+
+    if not cfg.bot_token:
+        logging.getLogger("emlak_bot").warning(
+            "TELEGRAM_BOT_TOKEN tanımlı değil. Telegram botu başlatılmadı, sadece web paneli çalışıyor."
+        )
+        import time as _t
+        try:
+            while True:
+                _t.sleep(3600)
+        except (KeyboardInterrupt, SystemExit):
+            return
+
+    # Telegram botu mevcutsa başlat
+    app = Application.builder().token(cfg.bot_token).build()
     messenger = TelegramMessenger(app.bot)
     app.bot_data.update(db=db, cfg=cfg, messenger=messenger)
     handlers.register(app)
 
-    async def job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        await daily_job(db, messenger, cfg.inactivity_days, cfg.group_chat_id or None)
+    target_chat = cfg.chat_id or cfg.group_chat_id or None
 
-    # Her gün sabah; kaçırılan günler için açılışta da bir kez çalışır (tekrar göndermez)
+    async def job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        await daily_job(db, messenger, cfg.inactivity_days, target_chat)
+
     app.job_queue.run_daily(job, time=time(cfg.reminder_hour, 0, tzinfo=cfg.tz), name="daily")
     app.job_queue.run_once(job, when=15, name="startup-catchup")
 
@@ -59,8 +77,6 @@ def main() -> None:
         logging.getLogger("emlak_bot").exception("Hata", exc_info=ctx.error)
 
     app.add_error_handler(on_error)
-    if cfg.web_enabled:
-        _start_web(db, cfg)
     app.run_polling()
 
 

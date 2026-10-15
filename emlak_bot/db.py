@@ -164,6 +164,23 @@ class Database:
                 (username.lower(), password_hash, user_id),
             )
 
+    def seed_admin(self, username: str, password: str, name: str = "Diren Doğan") -> int:
+        from werkzeug.security import generate_password_hash
+
+        u = self.get_user_by_username(username)
+        pwd_hash = generate_password_hash(password)
+        if u:
+            self.execute(
+                "UPDATE users SET password_hash=?, role='owner', active=1 WHERE id=?",
+                (pwd_hash, u["id"]),
+            )
+            return u["id"]
+        return self.execute(
+            "INSERT INTO users (channel, chat_id, name, role, active, created_at, username, password_hash) "
+            "VALUES (?, ?, ?, 'owner', 1, ?, ?, ?)",
+            ("web", username.lower(), name, now_iso(), username.lower(), pwd_hash),
+        )
+
     # ---- davetler ----
     def create_invite(self, created_by: int) -> str:
         code = secrets.token_hex(4).upper()
