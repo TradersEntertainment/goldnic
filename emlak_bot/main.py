@@ -29,6 +29,9 @@ def _start_web(db, cfg) -> None:
 
 def main() -> None:
     logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=logging.INFO)
+    # httpx istek URL'sini (içinde bot token'ı var) INFO seviyesinde loglar; sızmasın
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     cfg = load_config()
     if not cfg.bot_token:
         raise SystemExit("TELEGRAM_BOT_TOKEN tanımlı değil.")
