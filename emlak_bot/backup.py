@@ -507,7 +507,11 @@ def main(argv: list[str] | None = None) -> int:
                     out_path = os.path.join(tmp, "v.db")
                     with open(out_path, "wb") as out:
                         meta = decrypt_stream(f, _passphrase_cli(args), out)
-                    check = sqlite3.connect(out_path).execute("PRAGMA integrity_check").fetchone()[0]
+                    conn = sqlite3.connect(out_path)
+                    try:
+                        check = conn.execute("PRAGMA integrity_check").fetchone()[0]
+                    finally:
+                        conn.close()
                 print(f"✅ Yedek sağlam: {meta.get('created')} · {human_size(meta.get('size', 0))} · integrity={check}")
                 return 0 if check == "ok" else 2
             if os.path.exists(args.out):

@@ -156,7 +156,8 @@ def test_backup_goes_only_to_owner_private_chats_in_parts(env, monkeypatch):
     monkeypatch.setenv("BACKUP_PASSPHRASE", PASS)
     out = folder / "cli.db"
     assert backup.main(["decrypt", str(folder / f"{res.file}.part1of{len(parts)}"), "-o", str(out)]) == 0
-    assert sqlite3.connect(out).execute("SELECT COUNT(*) FROM properties").fetchone()[0] == 1
+    with sqlite3.connect(out) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM properties").fetchone()[0] == 1
     assert backup.main(["decrypt", str(folder / res.file), "-o", str(out)]) == 2      # üzerine yazmaz
     assert backup.main(["verify", str(folder / res.file)]) == 0
     assert backup.telegram_targets(db, make_cfg(path, backup_chat_id="555")) == ["555"]
