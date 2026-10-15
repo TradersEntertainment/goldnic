@@ -148,6 +148,7 @@ async def cmd_help(update: Update, ctx, user):
             "/tufe guncelle — TÜİK/EVDS'den son oranı çek",
             "/tufe 31,49 veya /tufe 2026-09 31,49 — oranı elle gir",
             "/csv — tüm portföyü Excel için indir",
+            "/yedek — şifreli veritabanı yedeğini şimdi al ve bana gönder",
             "/test_hatirlat — bugünkü hatırlatma kontrolünü şimdi çalıştır",
         ]
     await reply(update, "\n".join(t))
@@ -582,6 +583,23 @@ async def cmd_talepler(update: Update, ctx, user):
     await reply(update, "\n".join(lines))
 
 
+@registered(owner_only=True)
+async def cmd_backup(update: Update, ctx, user):
+    import asyncio
+
+    from . import backup
+
+    db, cfg = _db(ctx), _cfg(ctx)
+    await reply(update, "⏳ Şifreli yedek alınıyor…")
+    res = await asyncio.to_thread(backup.run_backup, db, cfg, reason=f"elle (Telegram, {user['name']})")
+    if res.ok:
+        dest = ", ".join(f"{k}: {v}" for k, v in res.destinations.items())
+        await reply(update, f"✅ Yedek alındı: <code>{texts.esc(res.file)}</code> ({backup.human_size(res.size)})\n"
+                            f"{texts.esc(dest)}")
+    else:
+        await reply(update, f"❌ Yedek alınamadı: {texts.esc(res.error)}")
+
+
 # ---------------------------------------------------------------- onay butonu
 async def on_ack(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -778,7 +796,7 @@ def register(app) -> None:
     for names, fn in [
         ("liste", cmd_list), ("yaklasan", cmd_upcoming), ("mulk", cmd_property), ("zam", cmd_zam),
         ("yenile", cmd_renew), ("duzenle", cmd_edit), ("sil", cmd_delete), ("tufe", cmd_tufe), ("hukuk", cmd_hukuk),
-        ("talep", cmd_talep), ("talepler", cmd_talepler),
+        ("talep", cmd_talep), ("talepler", cmd_talepler), ("yedek", cmd_backup),
         ("sifre", cmd_password), ("web", cmd_web),
         ("ozet", cmd_summary), ("emlakcilar", cmd_agents), ("davet", cmd_invite),
         ("cikar", cmd_remove_agent), ("devret", cmd_transfer), ("aktivite", cmd_activity),

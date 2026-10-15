@@ -319,6 +319,20 @@
     try { openDetails(`details${location.hash}`); } catch (_) { /* geçersiz seçici */ }
   }
 
+  // ------------------------------------------------------------ denetim izi: arama / WhatsApp tıklamaları
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="tel:"], a[href^="https://wa.me/"]');
+    if (!a || !navigator.sendBeacon) return;
+    const tel = a.getAttribute('href').startsWith('tel:');
+    const raw = tel ? a.getAttribute('href').slice(4) : (a.getAttribute('href').split('/')[3] || '').split('?')[0];
+    const fd = new FormData();
+    fd.append('csrf', csrf());
+    fd.append('kind', tel ? 'tel' : 'wa');
+    fd.append('target', raw);
+    fd.append('page', location.pathname);
+    try { navigator.sendBeacon('/api/iz', fd); } catch (_) { /* denetim kaydı işi durdurmamalı */ }
+  });
+
   // ------------------------------------------------------------ Spotlight (Ctrl/⌘ + K)
   const spot = $('#spotlight');
   if (spot) {

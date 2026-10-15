@@ -332,6 +332,11 @@ class Database:
     def __init__(self, path: str):
         self.path = path
         with closing(self._conn()) as c:
+            # WAL: web paneli, bot ve zamanlayıcı aynı anda okur/yazar; okuyucular yazanı beklemez
+            try:
+                c.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.OperationalError:
+                pass
             c.executescript(SCHEMA)
             had_username = "username" in {r["name"] for r in c.execute("PRAGMA table_info(users)")}
             for table, columns in MIGRATION_COLUMNS.items():
@@ -347,6 +352,7 @@ class Database:
         c = sqlite3.connect(self.path, timeout=10)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA foreign_keys = ON")
+        c.execute("PRAGMA synchronous = NORMAL")   # WAL ile güvenli ve hızlı
         return c
 
     @contextmanager

@@ -73,6 +73,7 @@ def main() -> None:
     sched = Scheduler(db, cfg.tz)
     sched.add("tufe", cfg.tufe_refresh_hour, 5, lambda: jobs.tufe_job(db, cfg))
     sched.add("matching", cfg.reminder_hour, 20, lambda: jobs.matching_job(db, cfg))
+    sched.add("backup", cfg.backup_hour, 0, lambda: jobs.backup_job(db, cfg))
     if not cfg.bot_token:
         sched.add("daily", cfg.reminder_hour, 0,
                   lambda: asyncio.run(daily_job(db, messenger=None, inactivity_days=cfg.inactivity_days, cfg=cfg)))

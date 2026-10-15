@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Yedekleme & Güvenlik — {{ brand }}{% endblock %}
+{% block body %}
+{% set last = h.last or {} %}
+<div class="page-head">
+  <div><div class="eyebrow">Sıfır veri kaybı</div><h1>Yedekleme & Güvenlik</h1>
+    <div class="sub">Her gece {{ '%02d'|format(hour) }}:00'da veritabanının şifreli kopyası alınır ve Diren Doğan'ın kişisel Telegram'ına sessizce gönderilir.</div></div>
+  <div class="actions">
+    <form method="post" action="{{ url_for('yedek_now') }}">{{ m.csrf_field() }}<button class="btn" type="submit">{{ m.icon('shield') }}Şimdi yedekle ve gönder</button></form>
+  </div>
+</div>
+
+<div class="kpis">
+  <div class="kpi {{ 'ok' if h.hours is not none and h.hours <= 26 else 'err' }}"><div class="k-ic">{{ m.icon('check' if h.hours is not none and h.hours <= 26 else 'alert') }}</div>
+    <b class="num">{% if h.hours is none %}—{% elif h.hours < 1 %}az önce{% elif h.hours < 48 %}{{ h.hours|int }} sa{% else %}{{ (h.hours / 24)|int }} gün{% endif %}</b><span>Son başarılı yedek{% if h.last_ok %} · {{ h.last_ok|dt }}{% endif %}</span></div>
+  <div class="kpi {{ 'ok' if h.encrypted else 'warn' }}"><div class="k-ic">{{ m.icon('lock') }}</div>
+    <b class="num">{{ 'AES-256' if h.encrypted else 'Kapalı' }}</b><span>{{ ('Şifreleme · anahtar: ' ~ h.key_source) if h.encrypted else 'BACKUP_PASSPHRASE tanımlı değil' }}</span></div>
+  <div class="kpi {{ 'ok' if h.targets else 'warn' }}"><div class="k-ic">{{ m.icon('chat') }}</div>
+    <b class="num">{{ h.targets|length }}</b><span>Telegram hedefi (yalnız ofis sahibi)</span></div>
+  <div class="kpi {{ 'ok' if h.s3 else '' }}"><div class="k-ic">{{ m.icon('database') }}</div>
+    <b class="num">{{ 'Açık' if h.s3 else '—' }}</b><span>S3 / R2 bulut deposu</span></div>
+  <div class="kpi info"><div class="k-ic">{{ m.icon('archive') }}</div>
+    <b class="num">{{ files|length }}</b><span>Sunucudaki kopya (son {{ keep }})</span></div>
+</div>
+
+<div class="g-side">
+  <div class="stack">
+    {% if last %}
+    <div class="card {{ 'gold' if last.ok else '' }}">
+      <div class="card-h"><h2>{{ m.icon('shield') }}Son yedekleme</h2>
+        {% if last.ok %}<span class="badge b-ok">{{ m.icon('check') }}Başarılı</span>{% else %}<span class="badge b-err">{{ m.icon('alert') }}Hata</span>{% endif %}</div>
+      <div class="kv">
+        <div>Zaman</div><div>{{ last.created_at|dt }}</div>
+        {% if last.file %}<div>Dosya</div><div><code>{{ last.file }}</code> · {{ human(last.size) }}</div>{% endif %}
+        {% if last.sha256 %}<div>SHA-256</div><div><code>{{ last.sha256[:32] }}…</code></div>{% endif %}
+        {% if last.counts %}<div>İçerik</div><div>{% for t, n in last.counts.items() %}{{ n }} {{ labels.get(t, t) }}{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+        {% for k, v in (last.destinations or {}).items() %}<div>{{ {'yerel': 'Sunucu', 'telegram': 'Telegram', 's3': 'S3 / R2'}.get(k, k) }}</div><div>{% if v == 'ok' %}<span class="good">✓ gönderildi</span>{% else %}<span class="mute">{{ v }}</span>{% endif %}</div>{% endfor %}
+        {% if last.error %}<div>Hata</div><div class="bad">{{ last.error }}</div>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('archive') }}Sunucudaki yedekler</h2><span class="mute">en yeni {{ keep }} kopya tutulur</span></div>
+      {% if files %}
+      <div class="table-wrap"><table class="rt">
+        <thead><tr><th>Dosya</th><th>Tarih</th><th class="right">Boyut</th><th></th></tr></thead>
+        <tbody>
+        {% for f in files %}
+        <tr>
+          <td class="rt-main"><span class="t-title">{{ f.name }}</span><span class="t-sub">{{ 'Şifreli (AES-256-GCM)' if f.encrypted else 'Şifresiz — yalnız sunucuda' }}</span></td>
+          <td data-label="Tarih">{{ f.mtime.strftime('%d.%m.%Y %H:%M') }}</td>
+          <td class="right" data-label="Boyut">{{ human(f.size) }}</td>
+          <td class="rt-actions"><a class="btn sm ghost" href="{{ url_for('yedek_download', name=f.name) }}">{{ m.icon('download') }}İndir</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{{ m.empty('Henüz yedek yok', 'İlk yedek bu gece alınacak; şimdi almak için yukarıdaki düğmeyi kullanın.', 'archive') }}{% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-h" id="iz"><h2>{{ m.icon('activity') }}Denetim izi</h2><span class="mute">kim, kimi, ne zaman aradı · güvenlik · veri</span></div>
+      <div class="scroll-x mb16">
+        <a class="chip {{ 'on' if not group }}" href="{{ url_for('yedek') }}#iz">Önemli olaylar</a>
+        {% for key, (label, _) in groups.items() %}<a class="chip {{ 'on' if group == key }}" href="{{ url_for('yedek', iz=key) }}#iz">{{ label }}</a>{% endfor %}
+      </div>
+      {% if audit %}
+      <input class="mb16" type="search" placeholder="Kişi, işlem veya numara ara…" data-filter="#auditTable">
+      <div class="table-wrap"><table class="rt" id="auditTable">
+        <thead><tr><th>Zaman</th><th>Kişi</th><th>İşlem</th><th>Detay</th></tr></thead>
+        <tbody>
+        {% for r in audit %}{% set lab = action_labels.get(r.action, (r.action, 'activity', None)) %}
+        <tr data-search="{{ r.user_name }} {{ lab[0] }} {{ r.detail or '' }}">
+          <td class="rt-main"><span class="t-title">{{ lab[0] }}</span><span class="t-sub">{{ r.ts|dt }}</span></td>
+          <td data-label="Kişi">{{ r.user_name }}</td>
+          <td data-label="İşlem"><span class="badge {{ 'b-err' if r.action in ('giris_basarisiz', 'yedek_hatasi') else '' }}">{{ m.icon(lab[1]) }}{{ r.action }}</span></td>
+          <td data-label="Detay"><span class="mute">{{ r.detail or '' }}</span></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{{ m.empty('Kayıt yok', 'Telefon / WhatsApp tıklamaları ve girişler burada izlenir.', 'activity') }}{% endif %}
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('lock') }}Nasıl korunuyor?</h2></div>
+      <ol class="steps">
+        <li><b>Tutarlı anlık görüntü:</b> SQLite yedek API'si, sistem çalışırken bile (WAL) yarım işlem içermeyen kopya alır.</li>
+        <li><b>Bütünlük kontrolü:</b> <code>PRAGMA integrity_check</code> geçmeyen yedek gönderilmez, size alarm gelir.</li>
+        <li><b>Şifreleme:</b> gzip + AES-256-GCM; anahtar parolanızdan scrypt ile türetilir. Parçalar sıra numarasıyla mühürlenir: değiştirilen, eksik veya kesik dosya açılmaz.</li>
+        <li><b>Gönderim:</b> yalnız ofis sahibinin kişisel Telegram sohbetine (sessiz bildirim), danışman grubuna asla. İsteğe bağlı S3 / Cloudflare R2.</li>
+        <li><b>Alarm:</b> yedek alınamazsa veya 26 saattir başarılı yedek yoksa Takip Merkezi'nde kırmızı uyarı + Telegram mesajı.</li>
+      </ol>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('refresh') }}Geri yükleme</h2></div>
+      <p class="mute">Telegram'daki <code>.gnbak</code> dosyasını indirin ve parolayla çözün:</p>
+      <div class="mono-box">BACKUP_PASSPHRASE='…' python -m emlak_bot.backup decrypt gn-yedek-2026-10-15-0300.gnbak -o emlak.db</div>
+      <p class="hint">Önce doğrulamak için: <code>python -m emlak_bot.backup verify DOSYA</code>. Parçalı gönderilen büyük yedeklerde ilk parçayı (<code>.part1of3</code>) vermeniz yeterli. Parolayı kaybederseniz yedek açılamaz — güvenli bir yerde saklayın.</p>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('key') }}Ayarlar (Railway değişkenleri)</h2></div>
+      <div class="kv">
+        <div><code>BACKUP_PASSPHRASE</code></div><div>{{ 'tanımlı ✓' if h.key_source == 'BACKUP_PASSPHRASE' else ('tanımsız — SECRET_KEY kullanılıyor' if h.encrypted else 'tanımsız') }}</div>
+        <div><code>OWNER_TELEGRAM_IDS</code> / <code>BACKUP_CHAT_ID</code></div><div>{{ (h.targets|length ~ ' sohbet') if h.targets else 'hedef yok' }}</div>
+        <div><code>BACKUP_HOUR</code></div><div>{{ '%02d'|format(hour) }}:00 (İstanbul)</div>
+        <div><code>BACKUP_S3_URL</code></div><div>{{ 'tanımlı ✓' if h.s3 else 'isteğe bağlı' }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

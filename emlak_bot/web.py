@@ -87,6 +87,12 @@ ACTION_LABELS: dict[str, tuple[str, str, str | None]] = {
     "eslesme_rejected": ("Müşteri beğenmedi", "x", "demand"),
     "eslesme_dismissed": ("Eşleşmeyi gizledi", "archive", "demand"),
     "eslesme_new": ("Eşleşmeyi geri aldı", "refresh", "demand"),
+    "telefon_aradi": ("Telefonla aradı", "phone", None),
+    "whatsapp_acti": ("WhatsApp sohbeti açtı", "chat", None),
+    "giris_basarisiz": ("Hatalı şifre denemesi", "lock", None),
+    "yedek_aldi": ("Şifreli yedek alındı", "shield", None),
+    "yedek_hatasi": ("Yedekleme başarısız", "alert", None),
+    "yedek_indirdi": ("Yedek dosyasını indirdi", "download", None),
 }
 
 
@@ -548,6 +554,8 @@ def create_app(db: Database, cfg: Config) -> Flask:
                 fails.pop(ip, None)
                 return redirect(url_for("dashboard"))
             fails.setdefault(ip, []).append(time.time())
+            if u:   # denetim izi: hesaba yönelik hatalı denemeler (kaba kuvvet tespiti)
+                db.log(u["id"], "giris_basarisiz", None, f"IP {ip}")
             flash("Kullanıcı adı veya şifre hatalı.", "err")
         return render_template("login.html")
 
@@ -1345,10 +1353,11 @@ def create_app(db: Database, cfg: Config) -> Flask:
         return redirect(url_for("property_view", pid=pid))
 
     # ------------------------------------------------------------ modüller
-    from . import web_crm, web_docs, web_law, web_pwa
+    from . import web_backup, web_crm, web_docs, web_law, web_pwa
     web_pwa.register(app, ctx)
     web_law.register(app, ctx)
     web_docs.register(app, ctx)
     web_crm.register(app, ctx)
+    web_backup.register(app, ctx)
 
     return app

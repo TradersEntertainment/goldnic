@@ -42,6 +42,18 @@ class Config:
     brand_license_no: str = ""
     commission_rent_months: float = 1.0   # kiralamada hizmet bedeli (aylık kira katı, KDV hariç)
     commission_sale_pct: float = 4.0      # satışta toplam hizmet bedeli (%; alıcı + satıcı, KDV hariç)
+    # şifreli gece yedeği
+    secret_key_from_env: bool = False     # SECRET_KEY ortamdan mı geldi (geçici anahtarla yedek şifrelenmez)
+    backup_passphrase: str = ""
+    backup_hour: int = 3
+    backup_keep: int = 14
+    backup_dir: str = ""
+    backup_chat_id: str = ""
+    backup_s3_url: str = ""               # https://<hesap>.r2.cloudflarestorage.com/<bucket> veya S3 uç noktası/bucket
+    backup_s3_region: str = "auto"
+    backup_s3_access_key: str = ""
+    backup_s3_secret_key: str = ""
+    backup_s3_prefix: str = "gold-nicomedia"
 
 
 def load_config() -> Config:
@@ -65,6 +77,7 @@ def load_config() -> Config:
             f"CHAT_ID sayısal olmalı (bireysel ID veya gruplar için -100...): {target_chat!r}."
         )
     secret = os.getenv("SECRET_KEY", "")
+    secret_from_env = bool(secret)
     if not secret:
         log.warning("SECRET_KEY tanımlı değil; geçici anahtar üretildi (yeniden başlatınca web oturumları kapanır).")
         secret = secrets.token_hex(32)
@@ -99,4 +112,15 @@ def load_config() -> Config:
         brand_license_no=os.getenv("BRAND_LICENSE_NO", "").strip(),
         commission_rent_months=float(os.getenv("COMMISSION_RENT_MONTHS", "1").replace(",", ".") or 1),
         commission_sale_pct=float(os.getenv("COMMISSION_SALE_PCT", "4").replace(",", ".") or 4),
+        secret_key_from_env=secret_from_env,
+        backup_passphrase=os.getenv("BACKUP_PASSPHRASE", "").strip(),
+        backup_hour=int(os.getenv("BACKUP_HOUR", "3")),
+        backup_keep=int(os.getenv("BACKUP_KEEP", "14")),
+        backup_dir=os.getenv("BACKUP_DIR", "").strip(),
+        backup_chat_id=os.getenv("BACKUP_CHAT_ID", "").strip(),
+        backup_s3_url=os.getenv("BACKUP_S3_URL", "").strip(),
+        backup_s3_region=os.getenv("BACKUP_S3_REGION", "auto").strip() or "auto",
+        backup_s3_access_key=os.getenv("BACKUP_S3_ACCESS_KEY", "").strip(),
+        backup_s3_secret_key=os.getenv("BACKUP_S3_SECRET_KEY", "").strip(),
+        backup_s3_prefix=os.getenv("BACKUP_S3_PREFIX", "gold-nicomedia").strip(),
     )

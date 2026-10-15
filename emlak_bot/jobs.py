@@ -63,3 +63,12 @@ def matching_job(db, cfg: Any) -> int:
             send_telegram_sync(cfg.bot_token, target, "\n".join(lines))
     log.info("Eşleştirme görevi: %d bildirim, %d acil talep hatırlatması", sent, len(urgent))
     return sent
+
+
+def backup_job(db, cfg: Any):
+    """Gece yedeği (şifreli) — sonuç ayarlara ve aktiviteye yazılır, hata olursa ofis sahibi uyarılır."""
+    from . import backup
+
+    res = backup.run_backup(db, cfg, reason="gece")
+    log.info("Gece yedeği: %s %s %s", "OK" if res.ok else "HATA", res.file or res.error, res.destinations)
+    return res
