@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from . import rent as R
 from . import texts
@@ -12,9 +13,29 @@ from .messenger import Messenger
 log = logging.getLogger(__name__)
 
 
-def get_tufe(db: Database) -> float | None:
+def get_tufe(db: Database, on: date | None = None) -> float | None:
+    """Belirtilen gün itibarıyla açıklanmış en güncel TÜFE 12 aylık ortalaması (yoksa eski elle giriş)."""
+    from . import law, tufe
+
+    latest = law.latest_rate(tufe.load_rates(db), on or date.today())
+    if latest is not None:
+        return latest.avg12
     v = db.get_setting("tufe")
     return float(v) if v is not None else None
+
+
+def legal_cap_pct(db: Database, p, rates: dict | None = None) -> float | None:
+    """Mülkün yenileme tarihine uygulanacak yasal azami artış oranı (TBK 344 + %25 konut dönemi)."""
+    from . import law, legal, tufe
+
+    rates = rates if rates is not None else tufe.load_rates(db)
+    return law.rent_cap(date.fromisoformat(p["renewal_date"]), rates, legal.prop_kind(p)).cap_pct
+
+
+def local_today(cfg: Any = None) -> date:
+    """Sunucu UTC'de çalışsa da ofisin saat dilimine göre bugünün tarihi."""
+    tz = getattr(cfg, "tz", None)
+    return datetime.now(tz).date() if tz else date.today()
 
 
 def _ack_buttons(p) -> list[list[tuple[str, str]]]:
@@ -33,8 +54,10 @@ async def run_reminders(
     """
     from .whatsapp import build_agent_escalation_message, send_whatsapp_notification
 
-    today = today or date.today()
-    tufe = get_tufe(db)
+    from . import tufe as tufe_data
+
+    today = today or local_today(cfg)
+    rates = tufe_data.load_rates(db)
     owners = db.list_users("owner")
     sent = 0
     for p in db.list_properties():
@@ -49,7 +72,7 @@ async def run_reminders(
 
         agent = db.get_user(p["agent_id"])
         agent_name = agent["name"] if agent else "Bilinmiyor"
-        text = texts.reminder_message(p, agent_name, stage, today, tufe)
+        text = texts.reminder_message(p, agent_name, stage, today, legal_cap_pct(db, p, rates))
         delivered = False
 
         if messenger:
@@ -145,6 +168,10 @@ def build_owner_report(db: Database, today: date, inactivity_days: int, full: bo
         total = db.list_properties()
         lines.append(f"\nToplam portföy: <b>{len(total)}</b> mülk, "
                      f"<b>{R.money(sum(p['rent'] for p in total))}</b> aylık kira")
+        from . import legal
+
+        lines.append("")
+        lines.append(legal.summary_text(db, today))
     return "\n".join(lines)
 
 
@@ -169,7 +196,15 @@ async def daily_job(
     group_chat_id: str | None = None,
     cfg: Any = None,
 ) -> None:
-    n = await run_reminders(db, messenger, group_chat_id=group_chat_id, cfg=cfg)
+    from . import legal
+
+    today = local_today(cfg)
+    n = await run_reminders(db, messenger, today=today, group_chat_id=group_chat_id, cfg=cfg)
     log.info("Günlük iş: %d hatırlatma gönderildi", n)
+    try:
+        k = await legal.run_legal_alerts(db, messenger, today, group_chat_id, cfg)
+        log.info("Günlük iş: %d hukuki uyarı gönderildi", k)
+    except Exception:  # noqa: BLE001 - hukuk uyarıları kira hatırlatmalarını durdurmamalı
+        log.exception("Hukuki uyarılar gönderilemedi")
     if messenger:
-        await run_owner_digest(db, messenger, inactivity_days, group_chat_id=group_chat_id)
+        await run_owner_digest(db, messenger, inactivity_days, today=today, group_chat_id=group_chat_id)

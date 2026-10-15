@@ -1,0 +1,114 @@
+{% import "_macros.html" as m with context %}
+<div class="card" id="hukuk">
+  <div class="card-h">
+    <h2>{{ m.icon('scale') }}Hukuki durum</h2>
+    <div class="row">
+      <span class="badge">{{ kinds[pl.kind] }}</span>
+      {% if pl.start %}<span class="badge b-gold">Başlangıç {{ pl.start|tdate }}</span>{% else %}<span class="badge b-warn">Başlangıç tarihi eksik</span>{% endif %}
+    </div>
+  </div>
+
+  {% for a in pl.alerts %}
+  <div class="alert {{ 'err' if a.severity == 'critical' else ('warn' if a.severity == 'warning' else 'info') }}">
+    {{ m.icon(kind_icons.get(a.kind, 'scale')) }}
+    <div style="flex:1">
+      <b>{{ a.title }}</b> <span class="badge b-gold">{{ a.law_ref }}</span><br>{{ a.detail }}
+      {% if ack_actions.get(a.kind) %}
+      <div class="row mt8">
+        {% for key, label in ack_actions[a.kind].items() %}
+        <form method="post" action="{{ url_for('legal_ack', pid=p.id) }}">{{ m.csrf_field() }}<input type="hidden" name="kind" value="{{ a.kind }}"><input type="hidden" name="ref" value="{{ a.ref }}"><input type="hidden" name="action" value="{{ key }}"><button class="btn xs ghost" type="submit">{{ m.icon('check') }}{{ label }}</button></form>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="g3 mt12">
+    <div class="hero-stat">
+      <span>TÜFE tavanı · {{ p.renewal_date|tdate }}</span>
+      {% if pl.cap.cap_pct is not none %}
+      <b class="gold-text">{{ pl.cap_rent|float|money }}</b>
+      <small class="mute">{{ pl.cap.cap_pct|pct2 }} · {{ pl.cap.label }}{% if pl.cap.provisional %} · <span class="warn">geçici ({{ period_label(pl.cap.period) }} verisi {{ pl.cap.expected_on|tdate }})</span>{% endif %}</small>
+      {% else %}<b>—</b>{% endif %}
+    </div>
+    <div class="hero-stat">
+      <span>5. yıl kira tespiti</span>
+      {% if pl.five %}<b>{{ pl.five.mark|tdate }}</b><small class="mute">{{ pl.five.years }}. yıl dolar · dava son günü {{ pl.five.suit_deadline|tdate }}</small>
+      {% else %}<b>—</b><small class="mute">Başlangıç tarihi gerekli</small>{% endif %}
+    </div>
+    <div class="hero-stat">
+      <span>10. yıl tahliye hakkı</span>
+      {% if pl.ten %}<b>{{ pl.ten.right_from|tdate }}</b><small class="mute">ilk fesih {{ pl.ten.termination|tdate }} · ihtar son günü {{ pl.ten.notice_deadline|tdate }}</small>
+      {% else %}<b>—</b><small class="mute">Başlangıç tarihi gerekli</small>{% endif %}
+    </div>
+  </div>
+
+  {% if pl.market %}
+  <div class="alert gold mt12">{{ m.icon('trend') }}<div>
+    <b>Emsal kira (rayiç) tahmini: {{ pl.market.median|money }}</b> — {{ pl.market.count }} benzer ilan, aralık {{ pl.market.low|money }}–{{ pl.market.high|money }}.
+    {% if pl.market.gap_pct is not none %}{% if pl.market.gap_pct > 5 %}Mevcut kira rayicin <b>%{{ pl.market.gap_pct|round(1) }}</b> altında — 5. yıl tespitinde güçlü argüman.{% elif pl.market.gap_pct < -5 %}Mevcut kira rayicin %{{ (-pl.market.gap_pct)|round(1) }} üzerinde.{% else %}Mevcut kira rayice yakın.{% endif %}{% endif %}
+    <details class="mt8"><summary class="link-btn">Emsaller</summary>
+      <ul class="mb0">{% for c in pl.market.comps %}<li><a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.title }}</a> — {{ c.price|money }}{% if c.status == 'rented' %} (kiralandı){% endif %}</li>{% endfor %}</ul>
+    </details>
+  </div></div>
+  {% endif %}
+
+  <details class="mt16" {{ 'open' if not pl.start }}>
+    <summary class="link-btn">{{ m.icon('edit', 'sm') }} Sözleşme bilgileri (başlangıç, süre, tür, teslim)</summary>
+    <form method="post" action="{{ url_for('property_legal_update', pid=p.id) }}" class="mt8">
+      {{ m.csrf_field() }}
+      <div class="form-grid">
+        <div><label for="lg_start">İlk sözleşme başlangıcı</label><input id="lg_start" type="date" name="lease_start_date" value="{{ p.lease_start_date or '' }}"></div>
+        <div><label for="lg_term">İlk sözleşme süresi (ay)</label><input id="lg_term" type="number" min="1" max="600" name="lease_term_months" value="{{ pl.term_months }}"></div>
+        <div><label for="lg_kind">Kiralananın türü</label><select id="lg_kind" name="property_kind">{% for k, v in kinds.items() %}<option value="{{ k }}" {{ 'selected' if pl.kind == k }}>{{ v }}</option>{% endfor %}</select></div>
+        <div><label for="lg_deliv">Kiracıya teslim tarihi</label><input id="lg_deliv" type="date" name="delivery_date" value="{{ p.delivery_date or '' }}"><div class="hint">Tahliye taahhüdünün geçerliliği için gerekir.</div></div>
+      </div>
+      <button class="btn sm mt12" type="submit">{{ m.icon('check') }}Kaydet</button>
+    </form>
+  </details>
+
+  <div class="section-title">Tahliye taahhütleri</div>
+  {% for c in pl.commitments %}
+  <div class="item {{ 'critical' if c.check.phase == 'window' else ('warning' if c.check.phase == 'lapsed' else '') }}">
+    <div class="i-ic">{{ m.icon('gavel') }}</div>
+    <div class="i-body">
+      <div class="i-title">Tahliye {{ c.eviction_date|tdate }} · {{ statuses[c.status] }}</div>
+      <div class="i-sub">İmza {{ c.signed_date|tdate }}{% if c.tenant_name %} · {{ c.tenant_name }}{% endif %}{% if c.notice_date %} · İhtar {{ c.notice_date|tdate }}{% endif %} · İcra/dava son gün <b class="strong">{{ c.check.deadline|tdate }}</b></div>
+      {% for issue in c.check.issues %}<div class="i-sub warn">⚠ {{ issue }}</div>{% endfor %}
+      {% if c.status == 'active' %}
+      {% if not c.notice_date and c.check.phase == 'before' %}
+      <form method="post" action="{{ url_for('commitment_update', cid=c.id) }}" class="row mt8">{{ m.csrf_field() }}<input type="hidden" name="action" value="notice"><input type="date" name="date" value="{{ today.isoformat() }}" style="max-width:170px;min-height:32px;padding:4px 10px" aria-label="İhtar tarihi"><button class="btn xs" type="submit">{{ m.icon('file') }}İhtar çekildi (TBK 353)</button></form>
+      {% endif %}
+      <div class="i-actions">
+        {% for act, label in [('executed', 'İcra/dava başlatıldı'), ('evicted', 'Tahliye edildi'), ('waived', 'Vazgeçildi'), ('lapsed', 'Süre geçti')] %}
+        <form method="post" action="{{ url_for('commitment_update', cid=c.id) }}">{{ m.csrf_field() }}<input type="hidden" name="action" value="{{ act }}"><button class="btn xs ghost" type="submit">{{ label }}</button></form>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="mute">Kayıtlı tahliye taahhüdü yok.</p>
+  {% endfor %}
+  <details class="mt12">
+    <summary class="link-btn">{{ m.icon('plus', 'sm') }} Tahliye taahhüdü ekle</summary>
+    <form method="post" action="{{ url_for('commitment_add', pid=p.id) }}" class="mt8">
+      {{ m.csrf_field() }}
+      <div class="form-grid">
+        <div><label for="tc_signed">Taahhütname imza tarihi *</label><input id="tc_signed" type="date" name="signed_date" required></div>
+        <div><label for="tc_evict">Taahhüt edilen tahliye tarihi *</label><input id="tc_evict" type="date" name="eviction_date" required></div>
+        <div><label for="tc_tenant">Taahhüt veren kiracı</label><input id="tc_tenant" name="tenant_name" value="{{ p.tenant_name or '' }}"></div>
+        <div><label for="tc_notes">Not</label><input id="tc_notes" name="notes" placeholder="Noter onaylı / adi yazılı"></div>
+      </div>
+      <div class="hint">TBK 352/1: taahhüt, kiralananın tesliminden <b>sonra</b> imzalanmalıdır. Aynı gün imzalanan taahhütler geçersizlik riski taşır.</div>
+      <button class="btn sm mt12" type="submit">{{ m.icon('gavel') }}Takibe al</button>
+    </form>
+  </details>
+
+  {% if acks %}
+  <details class="mt12"><summary class="link-btn">Hukuki işlem geçmişi ({{ acks|length }})</summary>
+    <ul class="mute mb0">{% for a in acks %}<li>{{ a.created_at|dt }} — {{ ack_actions.get(a.kind, {}).get(a.action, a.action) }} ({{ a.user_name or '-' }})</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</div>

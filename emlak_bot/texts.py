@@ -11,6 +11,13 @@ def esc(x) -> str:
     return "-" if x in (None, "") else html.escape(str(x))
 
 
+def strip_html(text: str) -> str:
+    """Telegram HTML metnini WhatsApp/SMS için düz metne çevirir."""
+    import re
+
+    return html.unescape(re.sub(r"<[^>]+>", "", text or ""))
+
+
 def days_left(p, today: date) -> int:
     return (date.fromisoformat(p["renewal_date"]) - today).days
 
@@ -36,7 +43,7 @@ def increase_lines(p, tufe: float | None) -> list[str]:
         )
     if tufe is not None:
         lines.append(
-            f"ℹ️ TÜFE 12 aylık ort. (yasal sınır): {R.pct_str(tufe)} → "
+            f"ℹ️ Yasal artış sınırı (TBK 344): {R.pct2(tufe)} → "
             f"azami <b>{R.money(R.apply_pct(p['rent'], tufe))}</b>"
         )
         if p["planned_pct"] is not None and p["planned_pct"] > tufe:

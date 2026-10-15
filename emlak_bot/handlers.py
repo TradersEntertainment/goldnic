@@ -16,7 +16,7 @@ from telegram.ext import (
 
 from . import rent as R
 from . import texts
-from .reminders import build_owner_report, get_tufe, run_reminders
+from .reminders import build_owner_report, get_tufe, legal_cap_pct, run_reminders
 
 log = logging.getLogger(__name__)
 HTML = ParseMode.HTML
@@ -125,6 +125,7 @@ async def cmd_help(update: Update, ctx, user):
         "/zam 5 45000 — veya yeni kira tutarını gir",
         "/yenile 5 [yeni_kira] — sözleşme yenilendi, kaydı bir yıl ileri al",
         "/tufe — güncel TÜFE referansını göster",
+        "/hukuk — hukuk radarı: tahliye taahhüdü, 5. yıl tespit, 10. yıl tahliye",
         "",
         "<b>Web paneli</b>",
         "/sifre kullaniciadi — web girişi için kullanıcı adı + şifre al",
@@ -140,7 +141,8 @@ async def cmd_help(update: Update, ctx, user):
             "/cikar ID [yeni_ID] — emlakçıyı çıkar, portföyünü devret (varsayılan: sana)",
             "/devret MULK_ID KULLANICI_ID — tek mülkü devret",
             "/aktivite [KULLANICI_ID] — son işlemler",
-            "/tufe 33.5 — TÜFE 12 aylık ortalamayı güncelle",
+            "/tufe guncelle — TÜİK/EVDS'den son oranı çek",
+            "/tufe 31,49 veya /tufe 2026-09 31,49 — oranı elle gir",
             "/csv — tüm portföyü Excel için indir",
             "/test_hatirlat — bugünkü hatırlatma kontrolünü şimdi çalıştır",
         ]
@@ -262,7 +264,7 @@ async def add_lastinc(update: Update, ctx):
     db.log(new["agent_id"], "mulk_ekledi", pid, new["title"])
     p = db.get_property(pid)
     me = db.get_user(new["agent_id"])
-    await reply(update, "✅ Kaydedildi!\n\n" + texts.property_card(p, me["name"], _today(ctx), get_tufe(db)))
+    await reply(update, "✅ Kaydedildi!\n\n" + texts.property_card(p, me["name"], _today(ctx), legal_cap_pct(db, p)))
     await notify_owners(ctx, f"🆕 {texts.esc(me['name'])} yeni mülk ekledi: <b>{texts.esc(p['title'])}</b> (#{pid})",
                         exclude_user_id=me["id"])
     return ConversationHandler.END
@@ -337,7 +339,7 @@ async def cmd_property(update: Update, ctx, user):
         await reply(update, err)
         return
     hist = db.history(p["id"])
-    text = texts.property_card(p, _agent_name(db, p), _today(ctx), get_tufe(db))
+    text = texts.property_card(p, _agent_name(db, p), _today(ctx), legal_cap_pct(db, p))
     if hist:
         text += "\n\n🗂 <b>Kira geçmişi</b>\n" + "\n".join(
             f"{R.fmt_date(h['effective_date'])}: {R.money(h['old_rent'])} → "
@@ -369,8 +371,8 @@ async def cmd_zam(update: Update, ctx, user):
         return
     db.update_property(p["id"], planned_pct=pct, planned_rent=new)
     db.log(user["id"], "zam_girdi", p["id"], f"{R.pct_str(pct)} -> {R.money(new)}")
-    tufe = get_tufe(db)
-    warn = "\n🚨 Yasal TÜFE sınırını aşıyor!" if tufe is not None and pct > tufe else ""
+    tufe = legal_cap_pct(db, p)
+    warn = "\n🚨 Yasal TÜFE sınırını aşıyor!" if tufe is not None and pct > tufe + 0.005 else ""
     await reply(update, f"✅ #{p['id']} {texts.esc(p['title'])}\nYeni kira planı: <b>{R.pct_str(pct)}</b> → "
                         f"<b>{R.money(new)}</b>{warn}")
     await notify_owners(ctx, f"📈 {texts.esc(user['name'])}, #{p['id']} {texts.esc(p['title'])} için zam girdi: "
@@ -453,23 +455,57 @@ async def cmd_delete(update: Update, ctx, user):
 
 @registered()
 async def cmd_tufe(update: Update, ctx, user):
-    db = _db(ctx)
-    if ctx.args:
+    from . import law as L
+    from . import tufe
+
+    db, today, cfg = _db(ctx), _today(ctx), _cfg(ctx)
+    args = list(ctx.args or [])
+    if args:
         if user["role"] != "owner":
             await reply(update, "⛔ TÜFE oranını sadece ofis sahibi güncelleyebilir.")
             return
+        if args[0].lower() in ("guncelle", "güncelle", "cek", "çek"):
+            res = tufe.refresh(db, today, evds_key=getattr(cfg, "evds_api_key", ""),
+                               evds_series=getattr(cfg, "evds_series", "TP.FG.J0"))
+            await reply(update, ("✅ " if res.ok else "⚠️ ") + texts.esc(res.message))
+            return
+        period = tufe.expected_latest_period(today)
+        if len(args) >= 2 and len(args[0]) == 7 and args[0][4] == "-":
+            period, args = args[0], args[1:]
         try:
-            v = R.parse_pct(ctx.args[0])
+            v = R.parse_pct(args[0])
+            tufe.upsert_rate(db, period, v, "manual")
         except ValueError as e:
             await reply(update, f"❌ {e}")
             return
         db.set_setting("tufe", str(v))
-        db.log(user["id"], "tufe_guncelledi", detail=str(v))
-        await reply(update, f"✅ TÜFE 12 aylık ortalama: {R.pct_str(v)}")
+        db.log(user["id"], "tufe_guncelledi", detail=f"{period}: {v}")
+        await reply(update, f"✅ {L.period_label(period)} TÜFE 12 aylık ortalama: {R.pct2(v)} (elle giriş)")
         return
-    v = get_tufe(db)
-    await reply(update, f"TÜFE 12 aylık ortalama (yasal artış sınırı): {R.pct_str(v)}" if v is not None
-                else "TÜFE oranı henüz girilmedi. Ofis sahibi <code>/tufe 33.5</code> ile girebilir.")
+    rates = tufe.load_rates(db)
+    latest = L.latest_rate(rates, today)
+    if latest is None:
+        v = get_tufe(db)
+        await reply(update, f"TÜFE 12 aylık ortalama (yasal artış sınırı): {R.pct_str(v)}" if v is not None
+                    else "TÜFE oranı henüz girilmedi. Ofis sahibi <code>/tufe guncelle</code> ile çekebilir.")
+        return
+    cap = L.rent_cap(today, rates)
+    lines = [
+        f"📈 <b>TÜFE 12 aylık ortalama: {R.pct2(latest.avg12)}</b>",
+        f"Veri ayı: {L.period_label(latest.period)} · Kaynak: {tufe.SOURCE_LABELS.get(latest.source, latest.source)}",
+        f"Bugün yenilenen sözleşmeler için yasal tavan: <b>{R.pct2(cap.cap_pct)}</b> ({cap.label})",
+    ]
+    if cap.provisional:
+        lines.append(f"⏳ {L.period_label(cap.period)} verisi {R.fmt_date(cap.expected_on)} tarihinde açıklanacak.")
+    await reply(update, "\n".join(lines))
+
+
+@registered()
+async def cmd_hukuk(update: Update, ctx, user):
+    from . import legal
+
+    scope = None if user["role"] == "owner" or user["can_see_all"] else user["id"]
+    await reply(update, legal.summary_text(_db(ctx), _today(ctx), scope))
 
 
 # ---------------------------------------------------------------- onay butonu
@@ -667,7 +703,7 @@ def register(app) -> None:
     app.add_handler(add_conversation())
     for names, fn in [
         ("liste", cmd_list), ("yaklasan", cmd_upcoming), ("mulk", cmd_property), ("zam", cmd_zam),
-        ("yenile", cmd_renew), ("duzenle", cmd_edit), ("sil", cmd_delete), ("tufe", cmd_tufe),
+        ("yenile", cmd_renew), ("duzenle", cmd_edit), ("sil", cmd_delete), ("tufe", cmd_tufe), ("hukuk", cmd_hukuk),
         ("sifre", cmd_password), ("web", cmd_web),
         ("ozet", cmd_summary), ("emlakcilar", cmd_agents), ("davet", cmd_invite),
         ("cikar", cmd_remove_agent), ("devret", cmd_transfer), ("aktivite", cmd_activity),

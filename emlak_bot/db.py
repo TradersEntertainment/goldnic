@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import secrets
 import sqlite3
-from contextlib import closing
+from contextlib import closing, contextmanager
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -106,6 +106,47 @@ CREATE TABLE IF NOT EXISTS sahibinden_listings (
     status TEXT NOT NULL DEFAULT 'active'
 );
 CREATE INDEX IF NOT EXISTS ix_shbdn_norm ON sahibinden_listings(consultant_name, listing_type, normalized_title);
+-- Türk kira hukuku modülü
+CREATE TABLE IF NOT EXISTS cpi_rates (
+    period TEXT PRIMARY KEY,             -- veri ayı (YYYY-MM)
+    avg12 REAL NOT NULL,                 -- 12 aylık ortalamalara göre TÜFE değişimi (%)
+    annual REAL,                         -- yıllık değişim (%), biliniyorsa
+    announced_on TEXT NOT NULL,          -- TÜİK açıklama tarihi
+    source TEXT NOT NULL,                -- tuik | evds | manual | builtin
+    fetched_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS eviction_commitments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    property_id INTEGER NOT NULL REFERENCES properties(id),
+    tenant_name TEXT,
+    signed_date TEXT NOT NULL,           -- taahhütnamenin düzenlenme (imza) tarihi
+    eviction_date TEXT NOT NULL,         -- taahhüt edilen tahliye tarihi
+    notice_date TEXT,                    -- TBK 353 yazılı bildirim (ihtarname) tarihi
+    status TEXT NOT NULL DEFAULT 'active',
+    action_date TEXT,                    -- icra takibi / dava / tahliye tarihi
+    notes TEXT,
+    created_by INTEGER,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_evict_prop ON eviction_commitments(property_id);
+CREATE TABLE IF NOT EXISTS legal_alert_log (
+    property_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    stage TEXT NOT NULL,
+    sent_at TEXT NOT NULL,
+    PRIMARY KEY (property_id, kind, ref, stage)
+);
+CREATE TABLE IF NOT EXISTS legal_acks (
+    property_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    action TEXT NOT NULL,
+    notes TEXT,
+    user_id INTEGER,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (property_id, kind, ref)
+);
 """
 
 EDITABLE_PROPERTY_COLUMNS = {
@@ -114,7 +155,7 @@ EDITABLE_PROPERTY_COLUMNS = {
     "planned_pct", "planned_rent", "notes", "status", "agent_id",
     "exit_date", "deposit_notes", "handover_notes",
     "last_contacted_at", "last_contacted_due", "last_contacted_notes",
-    "lease_start_date",
+    "lease_start_date", "lease_term_months", "property_kind", "delivery_date",
 }
 
 # Sonradan eklenen sütunlar: eski veritabanlarına PRAGMA table_info kontrolüyle ALTER TABLE uygulanır.
@@ -134,6 +175,9 @@ MIGRATION_COLUMNS: dict[str, dict[str, str]] = {
         "last_contacted_notes": "TEXT",
         # mevcut kiracıyla ilk sözleşmenin başlangıcı (5. yıl / 10. yıl hesapları için)
         "lease_start_date": "TEXT",
+        "lease_term_months": "INTEGER",      # ilk sözleşme süresi (ay), boşsa 12
+        "property_kind": "TEXT",             # konut | isyeri (çatılı işyeri)
+        "delivery_date": "TEXT",             # kiralananın kiracıya teslim tarihi
     },
     "sahibinden_listings": {
         # kiralama / satış işlemi (deal_rent satılıkta satış bedelini, deal_tenant_* alıcıyı tutar)
@@ -149,6 +193,8 @@ MIGRATION_COLUMNS: dict[str, dict[str, str]] = {
 # users.id'ye referans veren sütunlar (kullanıcı birleştirmede taşınır; modüller ekleme yapabilir)
 USER_REF_COLUMNS: list[tuple[str, str]] = [
     ("properties", "agent_id"),
+    ("eviction_commitments", "created_by"),
+    ("legal_acks", "user_id"),
     ("sahibinden_listings", "consultant_id"),
     ("activity", "user_id"),
     ("rent_history", "created_by"),
@@ -179,12 +225,24 @@ class Database:
             if not had_username:  # eski veritabanı
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username ON users(username)")
             c.commit()
+        from .tufe import ensure_builtin
+        ensure_builtin(self)  # TÜFE tavanı internet olmasa da hesaplanabilsin
 
     def _conn(self) -> sqlite3.Connection:
         c = sqlite3.connect(self.path, timeout=10)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA foreign_keys = ON")
         return c
+
+    @contextmanager
+    def connection(self) -> Iterator[sqlite3.Connection]:
+        """Birden çok komutu tek işlemde (transaction) çalıştırır."""
+        c = self._conn()
+        try:
+            yield c
+            c.commit()
+        finally:
+            c.close()
 
     def execute(self, sql: str, params: Iterable[Any] = ()) -> int:
         with closing(self._conn()) as c:

@@ -34,6 +34,9 @@ class Config:
     whatsapp_phone_number_id: str = ""
     whatsapp_api_url: str = ""
     whatsapp_target_phone: str = ""
+    evds_api_key: str = ""
+    evds_series: str = "TP.FG.J0"
+    tufe_refresh_hour: int = 11
 
 
 def load_config() -> Config:
@@ -83,4 +86,7 @@ def load_config() -> Config:
         whatsapp_phone_number_id=os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip(),
         whatsapp_api_url=os.getenv("WHATSAPP_API_URL", "").strip(),
         whatsapp_target_phone=os.getenv("WHATSAPP_TARGET_PHONE", os.getenv("WHATSAPP_PHONE", "")).strip(),
+        evds_api_key=os.getenv("EVDS_API_KEY", "").strip(),
+        evds_series=os.getenv("EVDS_TUFE_SERIES", "TP.FG.J0").strip() or "TP.FG.J0",
+        tufe_refresh_hour=int(os.getenv("TUFE_REFRESH_HOUR", "11")),
     )

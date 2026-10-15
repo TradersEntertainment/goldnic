@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Hukuk Radarı — {{ brand }}{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div><div class="eyebrow">Türk Borçlar Kanunu · TBK 344 · 345 · 347 · 352 · 353</div><h1>Hukuk Radarı</h1>
+    <div class="sub">TÜFE tavanı, tahliye taahhütleri, 5. yıl kira tespiti ve 10. yıl gerekçesiz tahliye hakkı — süreler otomatik izlenir.</div></div>
+  <div class="actions"><a class="btn ghost" href="#hesapla">{{ m.icon('percent') }}Kira artışı hesapla</a></div>
+</div>
+
+{% if missing_since %}
+<div class="alert err" id="tufe-uyari">{{ m.icon('alert') }}<div><b>{{ period_label(expected_period) }} TÜFE oranı sistemde yok.</b> TÜİK {{ missing_since|tdate }} tarihinde açıkladı; otomatik çekme başarısız oldu. Kira tavanları şu an bir önceki aya göre hesaplanıyor.{% if g.user.role == 'owner' %} Aşağıdan elle girin veya yeniden deneyin.{% endif %}</div></div>
+{% endif %}
+
+<div class="kpis">
+  <div class="kpi {{ 'err' if critical else 'ok' }}"><div class="k-ic">{{ m.icon('alert') }}</div><b class="num">{{ critical }}</b><span>Kritik hukuki süre</span></div>
+  <div class="kpi prime"><div class="k-ic">{{ m.icon('percent') }}</div><b class="num">{{ latest.avg12|pct2 if latest else '—' }}</b><span>TÜFE 12 ay ort. · {{ period_label(latest.period) if latest else 'veri yok' }}</span></div>
+  <div class="kpi warn"><div class="k-ic">{{ m.icon('gavel') }}</div><b class="num">{{ counts.get('taahhut', 0) }}</b><span>Tahliye taahhüdü uyarısı</span></div>
+  <div class="kpi info"><div class="k-ic">{{ m.icon('trend') }}</div><b class="num">{{ counts.get('tespit5', 0) }}</b><span>5. yıl tespit fırsatı</span></div>
+  <div class="kpi violet"><div class="k-ic">{{ m.icon('door') }}</div><b class="num">{{ counts.get('tahliye10', 0) }}</b><span>10. yıl tahliye hakkı</span></div>
+</div>
+
+<div class="g-side">
+  <div>
+    {% if not groups and not missing %}
+    <div class="card">{{ m.empty('Hukuki radar temiz', 'Yaklaşan bir tahliye taahhüdü, 5. yıl tespit fırsatı ya da 10. yıl hakkı bulunmuyor.', 'scale') }}</div>
+    {% endif %}
+    {% for kind in ['tufe', 'taahhut', 'tahliye10', 'tespit5'] if groups.get(kind) %}
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon(kind_icons[kind]) }}{{ kind_titles[kind] }}</h2><span class="badge">{{ groups[kind]|length }}</span></div>
+      <div class="list">
+        {% for p, a in groups[kind] %}
+        <a class="item {{ a.severity }}" href="{{ url_for('property_view', pid=p.id) }}#hukuk">
+          <div class="i-ic">{{ m.icon(kind_icons[kind]) }}</div>
+          <div class="i-body">
+            <div class="i-title">{{ a.title }}</div>
+            <div class="i-sub"><b class="strong">{{ p.title }}</b>{% if p.tenant_name %} · {{ p.tenant_name }}{% endif %}</div>
+            <div class="i-sub">{{ a.detail }}</div>
+            <div class="i-meta"><span class="badge b-gold">{{ a.law_ref }}</span>{% if a.due %}<span class="badge">{{ m.icon('calendar') }}{{ a.due|tdate }}</span>{% endif %}</div>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
+    {% if missing %}
+    <div class="card" id="eksik">
+      <div class="card-h"><h2>{{ m.icon('file') }}Sözleşme başlangıç tarihi eksik ({{ missing|length }})</h2></div>
+      <p class="mute">5. ve 10. yıl hakları için mevcut kiracıyla <b>ilk</b> sözleşmenin tarihini girin. Tek satırda kaydedin, radar anında güncellenir.</p>
+      <div class="list">
+        {% for p in missing %}
+        <div class="item">
+          <div class="i-ic">{{ m.icon('home') }}</div>
+          <div class="i-body">
+            <a class="i-title" href="{{ url_for('property_view', pid=p.id) }}#hukuk">{{ p.title }}</a>
+            <div class="i-sub">{{ p.tenant_name or 'Kiracı yok' }} · yenileme {{ p.renewal_date|tdate }}</div>
+            <form class="inline-form mt8" method="post" action="{{ url_for('property_legal_update', pid=p.id) }}">
+              {{ m.csrf_field() }}<input type="hidden" name="next" value="{{ url_for('hukuk') }}#eksik">
+              <input type="date" name="lease_start_date" required aria-label="Sözleşme başlangıç tarihi" style="max-width:200px">
+              <select name="property_kind" aria-label="Tür" style="max-width:160px">{% for k, v in property_kinds.items() %}<option value="{{ k }}" {{ 'selected' if (p.property_kind or 'konut') == k }}>{{ v }}</option>{% endfor %}</select>
+              <button class="btn sm" type="submit">{{ m.icon('check') }}Kaydet</button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card gold" id="tufe">
+      <div class="card-h"><h2>{{ m.icon('percent') }}TÜFE kira artış tavanı</h2>{% if latest %}<span class="badge b-gold">{{ source_labels.get(latest.source, latest.source) }}</span>{% endif %}</div>
+      {% if latest %}
+      <div class="hero-stats" style="margin-top:0">
+        <div class="hero-stat"><span>{{ period_label(latest.period) }} verisi</span><b class="gold-text">{{ latest.avg12|pct2 }}</b></div>
+        <div class="hero-stat"><span>Açıklanma</span><b>{{ latest.announced_on|tdate }}</b></div>
+      </div>
+      <p class="mute mt12 mb8">Bugün ({{ today|tdate }}) yenilenen sözleşmelerde <b class="strong">{{ next_renewal_cap.used_period and period_label(next_renewal_cap.used_period) }}</b> verisi uygulanır{% if next_renewal_cap.provisional %} <span class="badge b-warn">geçici</span> — {{ period_label(next_renewal_cap.period) }} verisi {{ next_renewal_cap.expected_on|tdate }}'de açıklanacak{% endif %}.</p>
+      {% endif %}
+      <details class="mt12">
+        <summary class="link-btn">Son 13 ayın oranları</summary>
+        <div class="table-wrap mt8"><table>
+          <thead><tr><th>Veri ayı</th><th>12 ay ort.</th><th>Uygulandığı yenilemeler</th><th>Kaynak</th></tr></thead>
+          <tbody>{% for r in history %}<tr><td>{{ period_label(r.period) }}</td><td class="num strong">{{ r.avg12|pct2 }}</td><td class="mute">{{ next_label(r.period) }} yenilemeleri</td><td><span class="badge">{{ r.source }}</span></td></tr>{% endfor %}</tbody>
+        </table></div>
+      </details>
+      {% if last_attempt %}<p class="hint">Son otomatik kontrol: {{ last_attempt|dt }} — {{ last_result }}</p>{% endif %}
+      {% if g.user.role == 'owner' %}
+      <hr>
+      <form method="post" action="{{ url_for('tufe_refresh') }}">{{ m.csrf_field() }}<button class="btn ghost block" type="submit">{{ m.icon('refresh') }}TÜİK / EVDS'den şimdi güncelle</button></form>
+      <form method="post" action="{{ url_for('tufe_manual') }}" class="mt12">
+        {{ m.csrf_field() }}
+        <div class="form-grid">
+          <div><label for="t_period">Veri ayı</label><input id="t_period" type="month" name="period" value="{{ expected_period }}" required></div>
+          <div><label for="t_rate">12 aylık ort. (%)</label><input id="t_rate" name="rate" inputmode="decimal" placeholder="31,49" required></div>
+        </div>
+        <button class="btn sm mt12" type="submit">{{ m.icon('check') }}Elle kaydet</button>
+        <div class="hint">TÜİK bülteninde "on iki aylık ortalamalara göre" yazan oran. Resmi kaynaktan çekilen veri elle girişin önündedir.</div>
+      </form>
+      {% endif %}
+    </div>
+
+    <div class="card" id="hesapla">
+      <div class="card-h"><h2>{{ m.icon('coins') }}Kira artış hesaplayıcı</h2></div>
+      <form method="get" action="{{ url_for('hukuk') }}#hesapla">
+        <div class="form-grid">
+          <div><label for="c_rent">Mevcut kira (₺)</label><input id="c_rent" name="kira" inputmode="decimal" value="{{ request.args.get('kira', '') }}" required placeholder="32.000"></div>
+          <div><label for="c_date">Yenileme tarihi</label><input id="c_date" type="date" name="tarih" value="{{ request.args.get('tarih', today.isoformat()) }}" required></div>
+          <div class="full"><label for="c_kind">Kiralanan</label><select id="c_kind" name="tur">{% for k, v in property_kinds.items() %}<option value="{{ k }}" {{ 'selected' if request.args.get('tur', 'konut') == k }}>{{ v }}</option>{% endfor %}</select></div>
+        </div>
+        <button class="btn mt12" type="submit">{{ m.icon('percent') }}Hesapla</button>
+      </form>
+      {% if calc %}
+      <div class="alert gold mt16">{{ m.icon('check') }}<div>
+        {% if calc.cap.cap_pct is none %}TÜFE verisi bulunamadı.{% else %}
+        <b>Yasal azami yeni kira: <span class="num">{{ calc.max|float|money }}</span></b> ({{ calc.cap.cap_pct|pct2 }} artış, +{{ (calc.max|float - calc.rent)|money }})<br>
+        <span class="mute">{{ calc.renewal|tdate }} yenilemesi → {{ calc.cap.label }}{% if calc.cap.rule == 'konut25' %} (TÜFE {{ calc.cap.cpi|pct2 }}){% endif %}.
+        {% if calc.cap.provisional %} Geçici: {{ period_label(calc.cap.period) }} verisi {{ calc.cap.expected_on|tdate }}'de açıklanacak.{% endif %}</span>
+        {% endif %}
+      </div></div>
+      {% endif %}
+    </div>
+
+    <div class="card flat">
+      <div class="card-h"><h2>{{ m.icon('file') }}Kısa hukuki rehber</h2></div>
+      <div class="stack mute" style="font-size:13.5px">
+        <div><b class="strong">TBK 344 — TÜFE tavanı:</b> Yenilenen dönemde artış, bir önceki kira yılının TÜFE 12 aylık ortalamasını geçemez (yenileme ayından önceki ayın verisi). 11.06.2022–01.07.2024 arası konutlarda %25 sınırı uygulandı.</div>
+        <div><b class="strong">TBK 352/1 + 353 — Tahliye taahhüdü:</b> Kiralananın tesliminden <u>sonra</u> yazılı verilmeli. Tahliye tarihinden itibaren 1 ay içinde icra (İİK 272) veya dava; tarihten önce ihtar çekilirse süre 1 yıl.</div>
+        <div><b class="strong">TBK 344/3 + 345 — 5. yıl tespiti:</b> 5 yılı dolduran sözleşmede kira hâkimce emsallere göre belirlenebilir; dava yeni dönemden 30 gün önce açılmalı ya da yeni dönemden önce yazılı bildirim yapılıp dönem sonuna kadar açılmalı.</div>
+        <div><b class="strong">TBK 347 — 10. yıl:</b> Sözleşme süresi + 10 yıllık uzama dolunca, izleyen her uzama yılının bitiminden en az 3 ay önce bildirimle gerekçesiz fesih.</div>
+        <div class="hint">Bilgilendirme amaçlıdır; dava ve icra işlemleri öncesinde avukat görüşü alınız.</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

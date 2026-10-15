@@ -89,6 +89,14 @@ def pct_str(x: float | None) -> str:
     return f"%{s}"
 
 
+def pct2(x: float | None) -> str:
+    """Yasal oranlar için iki ondalık (TÜİK yayımladığı hassasiyet): 31.49 -> '%31,49', 25.0 -> '%25'."""
+    if x is None:
+        return "-"
+    s = f"{x:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+    return f"%{s}"
+
+
 def pick_stage(days_left: int) -> int | None:
     """Bugün için gönderilmesi gereken en yakın aşama. Gecikmişse -1."""
     if days_left < 0:

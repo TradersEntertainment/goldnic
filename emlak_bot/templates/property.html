@@ -25,7 +25,7 @@
     <div class="hero-stat"><span>Yenileme</span><b>{{ p.renewal_date|tdate }}</b></div>
     <div class="hero-stat"><span>Bu yıl artış</span><b>{% if p.planned_rent %}{{ p.planned_pct|pct }} → {{ p.planned_rent|money }}{% else %}<span class="warn">girilmedi</span>{% endif %}</b></div>
     <div class="hero-stat"><span>Geçen yıl artış</span><b>{{ p.last_increase_pct|pct }}</b></div>
-    {% if tufe is not none %}<div class="hero-stat"><span>TÜFE tavanı ({{ tufe|pct }})</span><b>{{ cap|money }}</b></div>{% endif %}
+    {% if tufe is not none %}<div class="hero-stat"><span>Yasal tavan ({{ tufe|pct2 }})</span><b>{{ cap|money }}</b></div>{% endif %}
   </div>
   <div class="hero-actions">
     {% if wa_tenant_url %}<a href="{{ wa_tenant_url }}" target="_blank" rel="noopener" class="btn wa">{{ m.icon('chat') }}Kiracıya WhatsApp</a>{% endif %}
@@ -84,14 +84,15 @@
 
     <div class="card">
       <div class="card-h"><h2>{{ m.icon('trend') }}Kira artışı</h2>
-        {% if tufe is not none %}<span class="badge b-gold">TÜFE 12 ay ort. {{ tufe|pct }} · azami {{ cap|money }}</span>{% endif %}</div>
-      {% if over_cap %}<div class="alert err">{{ m.icon('alert') }}<div>Planlanan artış ({{ p.planned_pct|pct }}) yasal TÜFE tavanını ({{ tufe|pct }}) aşıyor. TBK 344 uyarınca aşan kısım geçersizdir.</div></div>{% endif %}
+        {% if tufe is not none %}<span class="badge b-gold">Yasal tavan {{ tufe|pct2 }} · azami {{ cap|money }}</span>{% endif %}</div>
+      {% if tufe is not none %}<p class="hint mt0">{{ p.renewal_date|tdate }} yenilemesi → {{ rent_cap.label }}{% if rent_cap.provisional %} (geçici: uygulanacak ayın verisi {{ rent_cap.expected_on|tdate }}'de açıklanacak){% endif %}.</p>{% endif %}
+      {% if over_cap %}<div class="alert err">{{ m.icon('alert') }}<div>Planlanan artış ({{ p.planned_pct|pct }}) yasal tavanı ({{ tufe|pct2 }}) aşıyor. TBK 344 uyarınca aşan kısım geçersizdir.</div></div>{% endif %}
       <div class="two">
         <form method="post" action="{{ url_for('property_zam', pid=p.id) }}">
           {{ m.csrf_field() }}
           <h3>Bu yılın artışını gir</h3>
           <label for="zam_value">Oran (%30) veya yeni kira (45000)</label>
-          <input id="zam_value" name="value" required placeholder="{{ ('%' ~ tufe|round(2)) if tufe is not none else '%30' }}">
+          <input id="zam_value" name="value" required placeholder="{{ tufe|pct2 if tufe is not none else '%30' }}">
           <button class="btn mt12" type="submit">{{ m.icon('check') }}Kaydet</button>
         </form>
         <form method="post" action="{{ url_for('property_renew', pid=p.id) }}" data-confirm="Sözleşme yenilendi olarak kaydedilsin mi? Yenileme tarihi bir yıl ileri alınır.">

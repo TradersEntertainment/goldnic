@@ -72,6 +72,9 @@ ACTION_LABELS: dict[str, tuple[str, str, str | None]] = {
     "kurulum_koduyla_sahip_oldu": ("Kurulum koduyla sahip oldu", "crown", None),
     "tufe_guncelledi": ("TÜFE oranını güncelledi", "percent", None),
     "disa_aktardi": ("Portföyü dışa aktardı", "download", None),
+    "taahhut_ekledi": ("Tahliye taahhüdü ekledi", "gavel", "property"),
+    "taahhut_guncelledi": ("Tahliye taahhüdünü güncelledi", "gavel", "property"),
+    "hukuk_onayladi": ("Hukuki uyarıyı kapattı", "scale", "property"),
 }
 
 
@@ -398,7 +401,7 @@ def create_app(db: Database, cfg: Config) -> Flask:
 
     app.jinja_env.filters.update(
         money=R.money, pct=R.pct_str, tdate=R.fmt_date, initials=initials, phone=format_phone, dt=format_dt,
-        plainnum=plain_number,
+        plainnum=plain_number, pct2=R.pct2,
     )
     app.jinja_env.globals.update(brand=cfg.brand_name, asset=asset, action_labels=ACTION_LABELS)
     login_required = ctx.login_required
@@ -642,9 +645,14 @@ def create_app(db: Database, cfg: Config) -> Flask:
     @app.get("/mulk/<int:pid>")
     @login_required()
     def property_view(pid: int):
+        from . import law as L
+        from . import legal
+        from . import tufe as tufe_data
+
         p = get_prop(pid)
-        tufe = get_tufe(db)
-        cap = R.apply_pct(p["rent"], tufe) if tufe is not None else None
+        rent_cap = L.rent_cap(date.fromisoformat(p["renewal_date"]), tufe_data.load_rates(db), legal.prop_kind(p))
+        tufe = rent_cap.cap_pct
+        cap = float(rent_cap.max_rent(p["rent"])) if tufe is not None else None
         agent = db.get_user(p["agent_id"])
         days = texts.days_left(p, today())
 
@@ -694,7 +702,8 @@ def create_app(db: Database, cfg: Config) -> Flask:
             wa_tenant_url=wa_tenant_url,
             wa_landlord_url=wa_landlord_url,
             is_acked=is_acked,
-            over_cap=tufe is not None and p["planned_pct"] is not None and p["planned_pct"] > tufe,
+            over_cap=tufe is not None and p["planned_pct"] is not None and p["planned_pct"] > tufe + 0.005,
+            rent_cap=rent_cap,
             panels=panels,
             agents=db.list_users() if g.user["role"] == "owner" else [],
             today_iso=today().isoformat(),
@@ -1322,7 +1331,8 @@ def create_app(db: Database, cfg: Config) -> Flask:
         return redirect(url_for("property_view", pid=pid))
 
     # ------------------------------------------------------------ modüller
-    from . import web_pwa
+    from . import web_law, web_pwa
     web_pwa.register(app, ctx)
+    web_law.register(app, ctx)
 
     return app

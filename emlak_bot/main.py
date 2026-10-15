@@ -50,6 +50,9 @@ def main() -> None:
     if cfg.admin_username and cfg.admin_password:
         admin_id = db.seed_admin(cfg.admin_username, cfg.admin_password)
         logging.getLogger("emlak_bot").info("Web yöneticisi aktif: %s (id: %s)", cfg.admin_username, admin_id)
+    merged = db.consolidate_duplicate_users()
+    if merged:
+        logging.getLogger("emlak_bot").info("%s mükerrer danışman kaydı gerçek hesaplarla birleştirildi", merged)
 
     if cfg.chat_id:
         logging.getLogger("emlak_bot").info("Telegram bildirim hedefi (CHAT_ID): %s", cfg.chat_id)
@@ -57,30 +60,24 @@ def main() -> None:
     if cfg.web_enabled:
         _start_web(db, cfg)
 
+    # Saat dilimine duyarlı günlük görevler (sunucu UTC olsa da İstanbul saatine göre çalışır)
+    import asyncio
+
+    from . import jobs
+    from .scheduler import Scheduler
+
+    sched = Scheduler(db, cfg.tz)
+    sched.add("tufe", cfg.tufe_refresh_hour, 5, lambda: jobs.tufe_job(db, cfg))
+    if not cfg.bot_token:
+        sched.add("daily", cfg.reminder_hour, 0,
+                  lambda: asyncio.run(daily_job(db, messenger=None, inactivity_days=cfg.inactivity_days, cfg=cfg)))
+    sched.start()
+
     if not cfg.bot_token:
         logging.getLogger("emlak_bot").warning(
             "TELEGRAM_BOT_TOKEN tanımlı değil. Web paneli ve WhatsApp hatırlatma servisi çalışıyor."
         )
-        import asyncio
         import time as _t
-        from datetime import datetime
-
-        def _reminder_loop():
-            _t.sleep(20)  # başlangıçta sistemin açılmasını bekle
-            last_run_day = None
-            while True:
-                try:
-                    now = datetime.now()
-                    if now.day != last_run_day and now.hour >= cfg.reminder_hour:
-                        logging.getLogger("emlak_bot").info("Zamanlanmış hatırlatmalar kontrol ediliyor...")
-                        asyncio.run(daily_job(db, messenger=None, inactivity_days=cfg.inactivity_days, cfg=cfg))
-                        last_run_day = now.day
-                except Exception as ex:
-                    logging.getLogger("emlak_bot").warning("Hatırlatma döngüsü hatası: %s", ex)
-                _t.sleep(300)
-
-        t_rem = threading.Thread(target=_reminder_loop, name="reminders", daemon=True)
-        t_rem.start()
 
         try:
             while True:
