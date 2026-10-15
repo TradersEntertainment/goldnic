@@ -75,6 +75,7 @@ ACTION_LABELS: dict[str, tuple[str, str, str | None]] = {
     "taahhut_ekledi": ("Tahliye taahhüdü ekledi", "gavel", "property"),
     "taahhut_guncelledi": ("Tahliye taahhüdünü güncelledi", "gavel", "property"),
     "hukuk_onayladi": ("Hukuki uyarıyı kapattı", "scale", "property"),
+    "belge_olusturdu": ("Resmi belge oluşturdu", "file", "property"),
 }
 
 
@@ -1331,8 +1332,9 @@ def create_app(db: Database, cfg: Config) -> Flask:
         return redirect(url_for("property_view", pid=pid))
 
     # ------------------------------------------------------------ modüller
-    from . import web_law, web_pwa
+    from . import web_docs, web_law, web_pwa
     web_pwa.register(app, ctx)
     web_law.register(app, ctx)
+    web_docs.register(app, ctx)
 
     return app

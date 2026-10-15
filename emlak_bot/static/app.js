@@ -95,6 +95,7 @@
   document.addEventListener('submit', (e) => {
     const f = e.target;
     if (f.dataset.confirm && !window.confirm(f.dataset.confirm)) { e.preventDefault(); return; }
+    if (f.hasAttribute('data-reload-after')) setTimeout(() => window.location.reload(), 2500); // yeni belge listede görünsün
     if (f.target === '_blank' || f.hasAttribute('data-no-lock')) return;
     const btn = f.querySelector('button[type="submit"],button:not([type])');
     if (btn) setTimeout(() => { btn.disabled = true; btn.dataset.locked = '1'; }, 0); // çift gönderimi engelle

@@ -1,0 +1,26 @@
+{% import "_macros.html" as m with context %}
+<div class="card" id="belgeler-panel">
+  <div class="card-h"><h2>{{ m.icon('file') }}Resmi belgeler</h2><a class="more" href="{{ url_for('docs_center', pid=p.id) }}">Belge Merkezi {{ m.icon('arrow-right', 'sm') }}</a></div>
+  <div class="row">
+    {% for kind, label in kinds.items() %}
+      {% if ready[kind].ready %}
+      <form method="post" action="{{ url_for('doc_generate', pid=p.id, kind=kind) }}" target="_blank">
+        {{ m.csrf_field() }}<button class="btn sm" type="submit" title="Tek tıkla PDF">{{ m.icon('download') }}{{ label }}</button>
+      </form>
+      {% else %}
+      <a class="btn sm ghost" href="{{ url_for('docs_center', pid=p.id) }}#bilgiler" title="Eksik: {{ ready[kind].missing|join(', ') }}">{{ m.icon('edit') }}{{ label }} <span class="badge b-warn">{{ ready[kind].missing|length }} eksik</span></a>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% if docs %}
+  <div class="list mt12">
+    {% for d in docs %}
+    <a class="item" href="{{ url_for('doc_download', doc_id=d.id) }}" target="_blank" rel="noopener">
+      <div class="i-ic">{{ m.icon('file') }}</div>
+      <div class="i-body"><div class="i-title">{{ kinds[d.kind] }} · {{ d.doc_no }}</div><div class="i-sub">{{ d.created_at|dt }} · {{ d.user_name or '-' }}</div></div>
+      <div class="i-side">{{ m.icon('external') }}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>

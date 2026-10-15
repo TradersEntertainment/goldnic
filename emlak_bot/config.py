@@ -37,6 +37,9 @@ class Config:
     evds_api_key: str = ""
     evds_series: str = "TP.FG.J0"
     tufe_refresh_hour: int = 11
+    brand_address: str = "İzmit / Kocaeli"
+    brand_phone: str = ""
+    brand_license_no: str = ""
 
 
 def load_config() -> Config:
@@ -89,4 +92,7 @@ def load_config() -> Config:
         evds_api_key=os.getenv("EVDS_API_KEY", "").strip(),
         evds_series=os.getenv("EVDS_TUFE_SERIES", "TP.FG.J0").strip() or "TP.FG.J0",
         tufe_refresh_hour=int(os.getenv("TUFE_REFRESH_HOUR", "11")),
+        brand_address=os.getenv("BRAND_ADDRESS", "İzmit / Kocaeli").strip() or "İzmit / Kocaeli",
+        brand_phone=os.getenv("BRAND_PHONE", "").strip(),
+        brand_license_no=os.getenv("BRAND_LICENSE_NO", "").strip(),
     )

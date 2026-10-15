@@ -137,6 +137,19 @@ CREATE TABLE IF NOT EXISTS legal_alert_log (
     sent_at TEXT NOT NULL,
     PRIMARY KEY (property_id, kind, ref, stage)
 );
+CREATE TABLE IF NOT EXISTS documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_no TEXT UNIQUE NOT NULL,         -- GN-2026-000042
+    property_id INTEGER REFERENCES properties(id),
+    kind TEXT NOT NULL,                  -- kira_sozlesmesi | tahliye_taahhutnamesi | teslim_tutanagi
+    verify_code TEXT NOT NULL,           -- belgede basılı doğrulama kodu (HMAC)
+    sha256 TEXT NOT NULL,                -- PDF dosyasının özeti
+    payload TEXT NOT NULL,               -- belgede kullanılan alanlar (JSON)
+    pdf BLOB NOT NULL,
+    created_by INTEGER,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_documents_prop ON documents(property_id);
 CREATE TABLE IF NOT EXISTS legal_acks (
     property_id INTEGER NOT NULL,
     kind TEXT NOT NULL,
@@ -156,6 +169,9 @@ EDITABLE_PROPERTY_COLUMNS = {
     "exit_date", "deposit_notes", "handover_notes",
     "last_contacted_at", "last_contacted_due", "last_contacted_notes",
     "lease_start_date", "lease_term_months", "property_kind", "delivery_date",
+    "address", "unit_desc", "landlord_tc", "landlord_address", "landlord_iban", "tenant_tc", "tenant_address",
+    "guarantor_name", "guarantor_tc", "guarantor_phone", "guarantor_address", "guarantor_limit",
+    "deposit_amount", "payment_day", "usage_purpose", "property_condition", "fixtures", "special_terms",
 }
 
 # Sonradan eklenen sütunlar: eski veritabanlarına PRAGMA table_info kontrolüyle ALTER TABLE uygulanır.
@@ -178,6 +194,25 @@ MIGRATION_COLUMNS: dict[str, dict[str, str]] = {
         "lease_term_months": "INTEGER",      # ilk sözleşme süresi (ay), boşsa 12
         "property_kind": "TEXT",             # konut | isyeri (çatılı işyeri)
         "delivery_date": "TEXT",             # kiralananın kiracıya teslim tarihi
+        # resmi belge (sözleşme / taahhütname / tutanak) bilgileri
+        "address": "TEXT",                   # kiralananın açık adresi
+        "unit_desc": "TEXT",                 # niteliği: 3+1 daire, kat, m²
+        "landlord_tc": "TEXT",
+        "landlord_address": "TEXT",
+        "landlord_iban": "TEXT",
+        "tenant_tc": "TEXT",
+        "tenant_address": "TEXT",
+        "guarantor_name": "TEXT",
+        "guarantor_tc": "TEXT",
+        "guarantor_phone": "TEXT",
+        "guarantor_address": "TEXT",
+        "guarantor_limit": "REAL",
+        "deposit_amount": "REAL",
+        "payment_day": "INTEGER",
+        "usage_purpose": "TEXT",
+        "property_condition": "TEXT",
+        "fixtures": "TEXT",                  # demirbaşlar (her satıra bir kalem)
+        "special_terms": "TEXT",             # özel şartlar (her satıra bir madde)
     },
     "sahibinden_listings": {
         # kiralama / satış işlemi (deal_rent satılıkta satış bedelini, deal_tenant_* alıcıyı tutar)
@@ -194,6 +229,7 @@ MIGRATION_COLUMNS: dict[str, dict[str, str]] = {
 USER_REF_COLUMNS: list[tuple[str, str]] = [
     ("properties", "agent_id"),
     ("eviction_commitments", "created_by"),
+    ("documents", "created_by"),
     ("legal_acks", "user_id"),
     ("sahibinden_listings", "consultant_id"),
     ("activity", "user_id"),

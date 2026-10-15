@@ -26,6 +26,27 @@ def send_telegram_sync(token: str, chat_id: str, text: str) -> bool:
         return False
 
 
+def send_telegram_document_sync(token: str, chat_id: str, filename: str, data: bytes, caption: str = "",
+                                silent: bool = False) -> bool:
+    """Telegram'a dosya gönderir (sözleşme PDF'i, şifreli yedek). En fazla 50 MB."""
+    import httpx
+
+    try:
+        r = httpx.post(
+            f"https://api.telegram.org/bot{token}/sendDocument",
+            data={"chat_id": chat_id, "caption": caption[:1000], "parse_mode": "HTML",
+                  "disable_notification": "true" if silent else "false"},
+            files={"document": (filename, data, "application/octet-stream")},
+            timeout=60,
+        )
+        if r.status_code != 200:
+            log.warning("Telegram belge gönderimi başarısız (%s): %s", r.status_code, r.text[:200])
+        return r.status_code == 200
+    except Exception:  # noqa: BLE001
+        log.exception("Telegram belgesi gönderilemedi: %s", chat_id)
+        return False
+
+
 class Messenger(ABC):
     channel: str = "base"
 

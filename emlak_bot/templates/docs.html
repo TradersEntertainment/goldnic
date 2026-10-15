@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Belge Merkezi — {{ p.title }} — {{ brand }}{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div><div class="eyebrow">Mülk #{{ p.id }} · Resmi belgeler</div><h1>Belge Merkezi</h1>
+    <div class="sub">{{ p.title }} — Kira Sözleşmesi, Tahliye Taahhütnamesi ve Teslim Tutanağı tek tıkla PDF.</div></div>
+  <div class="actions"><a class="btn ghost" href="{{ url_for('property_view', pid=p.id) }}">{{ m.icon('arrow-left') }}Mülke dön</a></div>
+</div>
+
+{# ---------------------------------------------------------- belgeler #}
+<div class="g3 mb16">
+      {% set r = ready.kira_sozlesmesi %}
+      <div class="card {{ 'gold' if r.ready }}">
+        <div class="card-h"><h2>{{ m.icon('file') }}Kira Sözleşmesi</h2>{% if r.ready %}<span class="badge b-ok">Hazır</span>{% else %}<span class="badge b-warn">Eksik</span>{% endif %}</div>
+        <form method="post" action="{{ url_for('doc_generate', pid=p.id, kind='kira_sozlesmesi') }}" target="_blank" data-reload-after>
+          {{ m.csrf_field() }}
+          <label for="k_cd">Sözleşme tarihi</label><input id="k_cd" type="date" name="contract_date" value="{{ today.isoformat() }}">
+          <label for="k_sd">Kira başlangıcı</label><input id="k_sd" type="date" name="start_date" value="{{ p.lease_start_date or today.isoformat() }}">
+          <label for="k_tm">Süre (ay)</label><input id="k_tm" type="number" min="1" max="600" name="term_months" value="{{ p.lease_term_months or 12 }}">
+          {% if r.missing %}<p class="hint warn">Eksik: {{ r.missing|join(', ') }}</p>{% elif r.recommended %}<p class="hint">Önerilen: {{ r.recommended|join(', ') }}</p>{% endif %}
+          <button class="btn block mt12" type="submit" {{ 'disabled' if not r.ready }}>{{ m.icon('download') }}PDF oluştur</button>
+        </form>
+      </div>
+      {% set r = ready.tahliye_taahhutnamesi %}
+      <div class="card {{ 'gold' if r.ready }}">
+        <div class="card-h"><h2>{{ m.icon('gavel') }}Tahliye Taahhütnamesi</h2>{% if r.ready %}<span class="badge b-ok">Hazır</span>{% else %}<span class="badge b-warn">Eksik</span>{% endif %}</div>
+        <form method="post" action="{{ url_for('doc_generate', pid=p.id, kind='tahliye_taahhutnamesi') }}" target="_blank" data-reload-after>
+          {{ m.csrf_field() }}
+          <label for="t_sd">Düzenleme (imza) tarihi</label><input id="t_sd" type="date" name="signed_date" value="{{ today.isoformat() }}">
+          <label for="t_ed">Tahliye tarihi</label><input id="t_ed" type="date" name="eviction_date" value="{{ default_eviction.isoformat() }}">
+          <label class="check"><input type="checkbox" name="add_to_radar" value="1" checked> Hukuk radarına ekle (ihtar &amp; icra süreleri)</label>
+          <p class="hint">TBK 352/1: teslimden ({{ p.delivery_date|tdate if p.delivery_date else 'teslim tarihi girilmedi' }}) sonra imzalanmalıdır.</p>
+          {% if r.missing %}<p class="hint warn">Eksik: {{ r.missing|join(', ') }}</p>{% endif %}
+          <button class="btn block mt12" type="submit" {{ 'disabled' if not r.ready }}>{{ m.icon('download') }}PDF oluştur</button>
+        </form>
+      </div>
+      {% set r = ready.teslim_tutanagi %}
+      <div class="card {{ 'gold' if r.ready }}">
+        <div class="card-h"><h2>{{ m.icon('key') }}Teslim Tutanağı</h2>{% if r.ready %}<span class="badge b-ok">Hazır</span>{% else %}<span class="badge b-warn">Eksik</span>{% endif %}</div>
+        <form method="post" action="{{ url_for('doc_generate', pid=p.id, kind='teslim_tutanagi') }}" target="_blank" data-reload-after>
+          {{ m.csrf_field() }}
+          <div class="form-grid">
+            <div><label for="h_d">Tarih</label><input id="h_d" type="date" name="handover_date" value="{{ today.isoformat() }}"></div>
+            <div><label for="h_dir">Tür</label><select id="h_dir" name="direction"><option value="teslim">Kiracıya teslim</option><option value="iade" {{ 'selected' if p.status == 'vacant' }}>Tahliye / iade</option></select></div>
+          </div>
+          <label for="h_k">Anahtar</label><input id="h_k" name="keys" placeholder="3 daire, 2 bina kapısı">
+          <div class="form-grid">
+            <div><label for="h_e">Elektrik</label><input id="h_e" name="meter_electric" inputmode="decimal"></div>
+            <div><label for="h_w">Su</label><input id="h_w" name="meter_water" inputmode="decimal"></div>
+            <div class="full"><label for="h_g">Doğalgaz</label><input id="h_g" name="meter_gas" inputmode="decimal"></div>
+          </div>
+          <label for="h_items">Demirbaşlar (Ad | Adet | Durum)</label><textarea id="h_items" name="items" rows="3">{{ fixtures_default }}</textarea>
+          <label for="h_n">Notlar</label><textarea id="h_n" name="notes" rows="2"></textarea>
+          {% if r.missing %}<p class="hint warn">Eksik: {{ r.missing|join(', ') }}</p>{% endif %}
+          <button class="btn block mt12" type="submit" {{ 'disabled' if not r.ready }}>{{ m.icon('download') }}PDF oluştur</button>
+        </form>
+      </div>
+</div>
+
+<div class="g-side">
+  <div>
+    {# ---------------------------------------------------------- geçmiş #}
+    <div class="card" id="belgeler">
+      <div class="card-h"><h2>{{ m.icon('archive') }}Oluşturulan belgeler</h2><a class="more" href="{{ url_for('doc_verify') }}">{{ m.icon('shield', 'sm') }}Belge doğrula</a></div>
+      {% if not docs %}{{ m.empty('Henüz belge yok', 'Yukarıdan ilk belgeyi tek tıkla oluşturun.', 'file') }}{% else %}
+      <div class="list">
+        {% for d in docs %}
+        <div class="item {{ 'gold' if d.id == new_id }}">
+          <div class="i-ic">{{ m.icon('file') }}</div>
+          <div class="i-body">
+            <div class="i-title">{{ kinds[d.kind] }} · {{ d.doc_no }}</div>
+            <div class="i-sub">{{ d.created_at|dt }} · {{ d.user_name or '-' }} · Doğrulama {{ d.verify_code }} · {{ (d.size / 1024)|round|int }} KB</div>
+            <div class="i-actions">
+              <a class="btn xs" href="{{ url_for('doc_download', doc_id=d.id) }}" target="_blank" rel="noopener">{{ m.icon('external') }}Aç</a>
+              <button class="btn xs wa" type="button" data-share-pdf="{{ url_for('doc_download', doc_id=d.id) }}" data-filename="{{ kinds[d.kind]|replace(' ', '-') }}-{{ d.doc_no }}.pdf" data-text="{{ kinds[d.kind] }} — {{ p.title }}">{{ m.icon('share') }}Paylaş (WhatsApp)</button>
+              <a class="btn xs ghost" href="{{ url_for('doc_download', doc_id=d.id, indir=1) }}">{{ m.icon('download') }}İndir</a>
+              <form method="post" action="{{ url_for('doc_telegram', doc_id=d.id) }}">{{ m.csrf_field() }}<button class="btn xs ghost" type="submit">{{ m.icon('chat') }}Telegram</button></form>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ---------------------------------------------------------- belge bilgileri #}
+  <div>
+    <div class="card" id="bilgiler">
+      <div class="card-h"><h2>{{ m.icon('edit') }}Sözleşme bilgileri</h2></div>
+      <p class="hint mt0">T.C. Kimlik No ve IBAN kontrol haneleriyle doğrulanır. Bu bilgiler yalnızca bu mülkü görme yetkisi olan kullanıcılara gösterilir (KVKK).</p>
+      <form method="post" action="{{ url_for('docs_details', pid=p.id) }}">
+        {{ m.csrf_field() }}
+        <div class="section-title">Kiralanan</div>
+        <label for="f_addr">Açık adres *</label><textarea id="f_addr" name="address" rows="2" placeholder="Mahalle, sokak, no, daire, ilçe/il">{{ p.address or '' }}</textarea>
+        <div class="form-grid">
+          <div><label for="f_unit">Niteliği</label><input id="f_unit" name="unit_desc" value="{{ p.unit_desc or '' }}" placeholder="3+1 daire, 3. kat, 135 m²"></div>
+          <div><label for="f_use">Kullanım amacı</label><input id="f_use" name="usage_purpose" value="{{ p.usage_purpose or '' }}" placeholder="Mesken / İşyeri (…)"></div>
+        </div>
+        <label for="f_cond">Şimdiki durumu</label><input id="f_cond" name="property_condition" value="{{ p.property_condition or '' }}" placeholder="Boyalı, temiz ve kullanıma hazır">
+
+        <div class="section-title">Kiraya veren</div>
+        <div class="form-grid">
+          <div><label for="f_ln">Ad soyad *</label><input id="f_ln" name="landlord_name" value="{{ p.landlord_name or '' }}"></div>
+          <div><label for="f_ltc">T.C. Kimlik No *</label><input id="f_ltc" name="landlord_tc" inputmode="numeric" maxlength="11" value="{{ p.landlord_tc or '' }}"></div>
+          <div><label for="f_lp">Telefon</label><input id="f_lp" name="landlord_phone" type="tel" value="{{ p.landlord_phone or '' }}"></div>
+          <div><label for="f_iban">IBAN</label><input id="f_iban" name="landlord_iban" value="{{ iban_fmt }}" placeholder="TR00 0000 0000 0000 0000 0000 00"></div>
+          <div class="full"><label for="f_la">Adres</label><input id="f_la" name="landlord_address" value="{{ p.landlord_address or '' }}"></div>
+        </div>
+
+        <div class="section-title">Kiracı</div>
+        <div class="form-grid">
+          <div><label for="f_tn">Ad soyad *</label><input id="f_tn" name="tenant_name" value="{{ p.tenant_name or '' }}"></div>
+          <div><label for="f_ttc">T.C. Kimlik No *</label><input id="f_ttc" name="tenant_tc" inputmode="numeric" maxlength="11" value="{{ p.tenant_tc or '' }}"></div>
+          <div><label for="f_tp">Telefon</label><input id="f_tp" name="tenant_phone" type="tel" value="{{ p.tenant_phone or '' }}"></div>
+          <div><label for="f_ta">Önceki ikametgâh</label><input id="f_ta" name="tenant_address" value="{{ p.tenant_address or '' }}"></div>
+        </div>
+
+        <div class="section-title">Kefil (isteğe bağlı)</div>
+        <div class="form-grid">
+          <div><label for="f_gn">Ad soyad</label><input id="f_gn" name="guarantor_name" value="{{ p.guarantor_name or '' }}"></div>
+          <div><label for="f_gtc">T.C. Kimlik No</label><input id="f_gtc" name="guarantor_tc" inputmode="numeric" maxlength="11" value="{{ p.guarantor_tc or '' }}"></div>
+          <div><label for="f_gp">Telefon</label><input id="f_gp" name="guarantor_phone" type="tel" value="{{ p.guarantor_phone or '' }}"></div>
+          <div><label for="f_gl">Azami kefalet tutarı (₺)</label><input id="f_gl" name="guarantor_limit" inputmode="decimal" value="{{ p.guarantor_limit|plainnum }}"></div>
+          <div class="full"><label for="f_ga">Adres</label><input id="f_ga" name="guarantor_address" value="{{ p.guarantor_address or '' }}"></div>
+        </div>
+
+        <div class="section-title">Ödeme &amp; güvence</div>
+        <div class="form-grid">
+          <div><label for="f_pd">Ödeme günü (ayın)</label><input id="f_pd" name="payment_day" type="number" min="1" max="31" value="{{ p.payment_day or '' }}" placeholder="1"></div>
+          <div><label for="f_dep">Depozito (₺)</label><input id="f_dep" name="deposit_amount" inputmode="decimal" value="{{ p.deposit_amount|plainnum }}"><div class="hint">En fazla 3 aylık kira: {{ (3 * p.rent)|money }} (TBK 342)</div></div>
+        </div>
+        <label for="f_fx">Demirbaşlar (her satıra bir kalem)</label><textarea id="f_fx" name="fixtures" rows="3" placeholder="Ankastre fırın&#10;Kombi&#10;Klima">{{ p.fixtures or '' }}</textarea>
+        <label for="f_sp">Özel şartlar (her satıra bir madde)</label><textarea id="f_sp" name="special_terms" rows="3" placeholder="Evcil hayvan beslenmeyecektir.">{{ p.special_terms or '' }}</textarea>
+        <button class="btn mt16" type="submit">{{ m.icon('check') }}Bilgileri kaydet</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
