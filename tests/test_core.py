@@ -98,3 +98,15 @@ def test_owner_report_flags_issues(db):
     _prop(db, -3, today)
     r = build_owner_report(db, today, 7, full=False)
     assert "gecikti" in r and "Mehmet" in r  # gecikmiş + hiç kullanmamış
+
+
+def test_group_receives_reminder_and_digest(db):
+    from emlak_bot.reminders import run_owner_digest
+    today = date(2026, 10, 15)
+    _prop(db, 3, today)
+    m = FakeMessenger()
+    assert asyncio.run(run_reminders(db, m, today, group_chat_id="-1001234")) == 1
+    assert "-1001234" in {c for c, _ in m.sent}
+    m2 = FakeMessenger()
+    asyncio.run(run_owner_digest(db, m2, 7, today, group_chat_id="-1001234"))
+    assert "-1001234" in {c for c, _ in m2.sent}

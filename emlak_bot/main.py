@@ -43,7 +43,7 @@ def main() -> None:
     handlers.register(app)
 
     async def job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        await daily_job(db, messenger, cfg.inactivity_days)
+        await daily_job(db, messenger, cfg.inactivity_days, cfg.group_chat_id or None)
 
     # Her gün sabah; kaçırılan günler için açılışta da bir kez çalışır (tekrar göndermez)
     app.job_queue.run_daily(job, time=time(cfg.reminder_hour, 0, tzinfo=cfg.tz), name="daily")

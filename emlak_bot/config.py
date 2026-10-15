@@ -24,6 +24,7 @@ class Config:
     web_enabled: bool
     cookie_secure: bool
     web_url: str
+    group_chat_id: str = ""
 
 
 def load_config() -> Config:
@@ -36,6 +37,12 @@ def load_config() -> Config:
             "@userinfobot'a /start yazıp 'Id' değerini alın (örn. 123456789)."
         )
     owners = {int(x) for x in raw_owners}
+    group = os.getenv("GROUP_CHAT_ID", "").strip()
+    if group and not group.lstrip("-").isdigit():
+        raise SystemExit(
+            f"GROUP_CHAT_ID sayısal olmalı (grup ID'leri genelde -100... ile başlar): {group!r}. "
+            "Gruba botu ekleyip grupta /chatid yazın."
+        )
     secret = os.getenv("SECRET_KEY", "")
     if not secret:
         log.warning("SECRET_KEY tanımlı değil; geçici anahtar üretildi (yeniden başlatınca web oturumları kapanır).")
@@ -53,4 +60,5 @@ def load_config() -> Config:
         web_enabled=os.getenv("WEB_ENABLED", "1") != "0",
         cookie_secure=os.getenv("COOKIE_SECURE", "1" if on_railway else "0") == "1",
         web_url=os.getenv("WEB_URL", "").rstrip("/"),
+        group_chat_id=group,
     )

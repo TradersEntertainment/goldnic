@@ -83,6 +83,8 @@ async def notify_owners(ctx, text: str, exclude_user_id: int | None = None):
     for o in _db(ctx).list_users("owner"):
         if o["id"] != exclude_user_id:
             await _msgr(ctx).send(o["chat_id"], text)
+    if _cfg(ctx).group_chat_id:
+        await _msgr(ctx).send(_cfg(ctx).group_chat_id, text)
 
 
 def _agent_name(db, p) -> str:
@@ -465,6 +467,9 @@ async def on_ack(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @registered()
 async def cmd_password(update: Update, ctx, user):
     """/sifre kullaniciadi  → web paneli için kullanıcı adı + rastgele şifre üretir."""
+    if update.effective_chat.type != "private":
+        await reply(update, "🔒 Şifre grupta gösterilemez. Bu komutu botla özel sohbette yazın.")
+        return
     import secrets
     from werkzeug.security import generate_password_hash
     from .web import validate_username
@@ -520,6 +525,9 @@ async def cmd_agents(update: Update, ctx, user):
 
 @registered(owner_only=True)
 async def cmd_invite(update: Update, ctx, user):
+    if update.effective_chat.type != "private":
+        await reply(update, "🔒 Bu komutu botla özel sohbette kullanın (kod grupta herkese görünür).")
+        return
     code = _db(ctx).create_invite(user["id"])
     await reply(update, f"🎟 Davet kodu: <code>{code}</code>\nEmlakçı botu açıp şunu yazsın:\n<code>/katil {code}</code>")
 
@@ -601,14 +609,34 @@ async def cmd_csv(update: Update, ctx, user):
 
 @registered(owner_only=True)
 async def cmd_test_reminders(update: Update, ctx, user):
-    n = await run_reminders(_db(ctx), _msgr(ctx), _today(ctx))
+    n = await run_reminders(_db(ctx), _msgr(ctx), _today(ctx), _cfg(ctx).group_chat_id or None)
     await reply(update, f"Kontrol tamam: {n} yeni hatırlatma gönderildi.")
+
+
+async def cmd_chatid(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Herhangi bir sohbette (grup dahil) o sohbetin ID'sini gösterir. Kayıt gerekmez."""
+    chat = update.effective_chat
+    await update.effective_message.reply_text(
+        f"Sohbet ID: {chat.id}\nTür: {chat.type}\nSenin kullanıcı ID'n: {update.effective_user.id}")
+
+
+@registered(owner_only=True)
+async def cmd_test_group(update: Update, ctx, user):
+    gid = _cfg(ctx).group_chat_id
+    if not gid:
+        await reply(update, "GROUP_CHAT_ID ayarlı değil. Gruba botu ekleyip grupta /chatid yazın, "
+                            "çıkan ID'yi Railway'de GROUP_CHAT_ID olarak girin.")
+        return
+    ok = await _msgr(ctx).send(gid, "✅ Test: bot bu gruba mesaj gönderebiliyor.")
+    await reply(update, "Gruba gönderildi ✅" if ok else
+                "❌ Gruba gönderilemedi. Bot gruba ekli mi? ID doğru mu (-100... ile başlamalı)?")
 
 
 def register(app) -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler(["yardim", "help"], cmd_help))
     app.add_handler(CommandHandler("katil", cmd_join))
+    app.add_handler(CommandHandler("chatid", cmd_chatid))
     app.add_handler(add_conversation())
     for names, fn in [
         ("liste", cmd_list), ("yaklasan", cmd_upcoming), ("mulk", cmd_property), ("zam", cmd_zam),
@@ -616,7 +644,7 @@ def register(app) -> None:
         ("sifre", cmd_password), ("web", cmd_web),
         ("ozet", cmd_summary), ("emlakcilar", cmd_agents), ("davet", cmd_invite),
         ("cikar", cmd_remove_agent), ("devret", cmd_transfer), ("aktivite", cmd_activity),
-        ("csv", cmd_csv), ("test_hatirlat", cmd_test_reminders),
+        ("csv", cmd_csv), ("test_hatirlat", cmd_test_reminders), ("test_grup", cmd_test_group),
     ]:
         app.add_handler(CommandHandler(names, fn))
     app.add_handler(CallbackQueryHandler(on_ack, pattern=r"^ack:\d+:\d{4}-\d{2}-\d{2}$"))

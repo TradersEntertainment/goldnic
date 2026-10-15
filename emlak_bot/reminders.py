@@ -21,8 +21,10 @@ def _ack_buttons(p) -> list[list[tuple[str, str]]]:
     return [[("✅ Bildirildi / ilgilendim", f"ack:{p['id']}:{p['renewal_date']}")]]
 
 
-async def run_reminders(db: Database, messenger: Messenger, today: date | None = None) -> int:
-    """Yenilemesi yaklaşan her mülk için emlakçıya + ofis sahibine bir kez mesaj atar."""
+async def run_reminders(
+    db: Database, messenger: Messenger, today: date | None = None, group_chat_id: str | None = None
+) -> int:
+    """Yenilemesi yaklaşan her mülk için emlakçıya + ofis sahibine (+ varsa gruba) bir kez mesaj atar."""
     today = today or date.today()
     tufe = get_tufe(db)
     owners = db.list_users("owner")
@@ -39,6 +41,8 @@ async def run_reminders(db: Database, messenger: Messenger, today: date | None =
         delivered = False
         for u in recipients.values():
             delivered |= await messenger.send(u["chat_id"], text, _ack_buttons(p))
+        if group_chat_id:
+            delivered |= await messenger.send(group_chat_id, text, _ack_buttons(p))
         if delivered:  # hiç ulaşmadıysa yarın tekrar denensin
             db.mark_reminder(p["id"], p["renewal_date"], stage)
             sent += 1
@@ -114,7 +118,8 @@ def build_owner_report(db: Database, today: date, inactivity_days: int, full: bo
 
 
 async def run_owner_digest(
-    db: Database, messenger: Messenger, inactivity_days: int, today: date | None = None
+    db: Database, messenger: Messenger, inactivity_days: int, today: date | None = None,
+    group_chat_id: str | None = None,
 ) -> None:
     today = today or date.today()
     report = build_owner_report(db, today, inactivity_days, full=today.weekday() == 0)
@@ -122,9 +127,13 @@ async def run_owner_digest(
         return
     for o in db.list_users("owner"):
         await messenger.send(o["chat_id"], report)
+    if group_chat_id:
+        await messenger.send(group_chat_id, report)
 
 
-async def daily_job(db: Database, messenger: Messenger, inactivity_days: int) -> None:
-    n = await run_reminders(db, messenger)
+async def daily_job(
+    db: Database, messenger: Messenger, inactivity_days: int, group_chat_id: str | None = None
+) -> None:
+    n = await run_reminders(db, messenger, group_chat_id=group_chat_id)
     log.info("Günlük iş: %d hatırlatma gönderildi", n)
-    await run_owner_digest(db, messenger, inactivity_days)
+    await run_owner_digest(db, messenger, inactivity_days, group_chat_id=group_chat_id)

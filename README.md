@@ -36,6 +36,15 @@ Emlakçıların portföyünü tek yerde toplar; kira yenileme zamanı geldiğind
 
 Emlakçı ayrılınca `/cikar ID` → portföyü devredilir **ve web girişi anında kapanır**.
 
+## Telegram grubuna bildirim (isteğe bağlı)
+Hatırlatmalar, ofis raporları ve emlakçı işlem bildirimleri bir gruba da gönderilebilir.
+1. Telegram'da grup aç, botu gruba ekle.
+2. Grupta `/chatid` yaz → bot `Sohbet ID: -100...` yazar.
+3. Railway Variables'a `GROUP_CHAT_ID=-100...` ekle (eksi işaretiyle birlikte).
+4. Ofis sahibi bota özelden `/test_grup` yazarak gönderimi dener.
+
+Gruptaki herkes kira ve kiracı bilgilerini görür. `/sifre` ve `/davet` gruplarda çalışmaz (şifre/kod sızmasın diye). Komutlar için botla özel sohbet kullanılır.
+
 ## Web paneli
 - **Emlakçı:** sadece kendi portföyünü görür/yönetir. **Ofis sahibi:** herkesi, ekip tablosunu, aktivite geçmişini görür.
 - Mülk ekleme, bu seneki zam oranını girme, yenileme, arşivleme. Emlakçıların işlemleri ofis sahibine Telegram'dan bildirilir.

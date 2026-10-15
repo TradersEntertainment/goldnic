@@ -117,6 +117,8 @@ def create_app(db: Database, cfg: Config) -> Flask:
         for o in db.list_users("owner"):
             if o["id"] != g.user["id"] and o["channel"] == "telegram":
                 send_telegram_sync(cfg.bot_token, o["chat_id"], text)
+        if cfg.group_chat_id:
+            send_telegram_sync(cfg.bot_token, cfg.group_chat_id, text)
 
     def today() -> date:
         return datetime.now(cfg.tz).date()
