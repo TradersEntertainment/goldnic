@@ -73,6 +73,9 @@ class TelegramMessenger(Messenger):
     async def send(self, chat_id: str, text: str, buttons: Buttons | None = None) -> bool:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
+        if not str(chat_id).lstrip("-").isdigit():
+            log.warning("Telegram sohbet kimliği sayısal değil, atlandı: %r", chat_id)
+            return False
         markup = None
         if buttons:
             markup = InlineKeyboardMarkup(
@@ -90,9 +93,25 @@ class TelegramMessenger(Messenger):
 
 
 class WhatsAppMessenger(Messenger):
-    """İleride: WhatsApp Business Cloud API ile gönderim. users.channel='whatsapp' kayıtları için."""
+    """WhatsApp Business Cloud API veya ağ geçidi (WHATSAPP_API_URL) ile gönderim.
+
+    users.channel='whatsapp' kayıtlarında chat_id telefon numarasıdır. WhatsApp'ta Telegram'daki gibi geri
+    çağrı butonu olmadığından, butonlu mesajlara web panelindeki onay bağlantısı eklenir.
+    """
 
     channel = "whatsapp"
 
+    def __init__(self, cfg):
+        self.cfg = cfg
+
     async def send(self, chat_id: str, text: str, buttons: Buttons | None = None) -> bool:
-        raise NotImplementedError("WhatsApp entegrasyonu henüz yapılmadı")
+        import asyncio
+
+        from .texts import strip_html
+        from .whatsapp import send_whatsapp_notification
+
+        plain = strip_html(text)
+        web_url = getattr(self.cfg, "web_url", "")
+        if buttons and web_url:
+            plain += f"\n\nOnaylamak için: {web_url}/takip"
+        return await asyncio.to_thread(send_whatsapp_notification, chat_id, plain, self.cfg)

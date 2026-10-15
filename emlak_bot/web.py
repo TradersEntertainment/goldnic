@@ -172,7 +172,7 @@ def parse_tabular_input(raw_text: str) -> list[dict]:
     header_keywords = {
         "başlık", "baslik", "daire no", "daire adı", "daire adi", "kira", "tutar", "tarih",
         "yenileme", "kiracı", "kiraci", "ev sahibi", "telefon", "danışman", "danisman", "notlar", "açıklama",
-        "başlangıç", "baslangic",
+        "başlangıç", "baslangic", "iban", "depozito", "t.c", "tc kimlik",
     }
     is_second_cell_number = False
     if len(first_row) >= 2:
@@ -187,6 +187,10 @@ def parse_tabular_input(raw_text: str) -> list[dict]:
     headers = first_row if has_header else []
     data_rows = raw_rows[1:] if has_header else raw_rows
 
+    title_words = ("başlık", "baslik", "daire", "mülk", "mulk", "ilan", "title")
+    # "Adres" sütunu, ayrıca bir daire/başlık sütunu varsa sözleşmedeki açık adrestir; yoksa mülk adıdır
+    address_is_detail = any(any(w in h for w in title_words) for h in headers)
+    tc_words = ("t.c", "tc ", "tc_", "tckn", "kimlik")
     results = []
     for r in data_rows:
         cells = [c.strip() for c in r]
@@ -196,7 +200,23 @@ def parse_tabular_input(raw_text: str) -> list[dict]:
         item: dict[str, str] = {}
         if has_header:
             for h, val in zip(headers, cells):
-                if any(x in h for x in ("kiracı tel", "kiraci tel", "kiracı telefon", "kiraci telefon", "kiraci_tel")):
+                hs = h + " "
+                if any(x in hs for x in tc_words) and any(x in h for x in ("ev sahibi", "sahip", "malik", "landlord")):
+                    item["landlord_tc"] = val
+                elif any(x in hs for x in tc_words) and any(x in h for x in ("kiracı", "kiraci", "tenant")):
+                    item["tenant_tc"] = val
+                elif "iban" in h:
+                    item["landlord_iban"] = val
+                elif any(x in h for x in ("depozito", "teminat", "deposit")):
+                    item["deposit_amount"] = val
+                elif any(x in h for x in ("teslim", "delivery")):
+                    item["delivery_date"] = val
+                elif any(x in h for x in ("açık adres", "acik adres", "tam adres")) or (
+                        "adres" in h and address_is_detail and not any(w in h for w in title_words)):
+                    item["address"] = val
+                elif h in ("tür", "tur", "türü", "turu", "nitelik", "kullanım", "kullanim", "kullanım amacı"):
+                    item["property_kind"] = val
+                elif any(x in h for x in ("kiracı tel", "kiraci tel", "kiracı telefon", "kiraci telefon", "kiraci_tel")):
                     item["tenant_phone"] = val
                 elif any(x in h for x in ("ev sahibi tel", "sahip tel", "malik tel", "ev sahibi telefon", "ev_sahibi_tel")):
                     item["landlord_phone"] = val
@@ -219,6 +239,11 @@ def parse_tabular_input(raw_text: str) -> list[dict]:
 
         if "title" not in item and len(cells) >= 1:
             item["title"] = cells[0]
+        if has_header:
+            # Başlıklı tabloda alanlar sütun adından gelir; eksik sütun sıra numarasından TAHMİN EDİLMEZ
+            # (aksi halde ör. "Kiracı TC" sütunu telefon alanına, "Adres" notlara düşüyordu).
+            results.append(item)
+            continue
         if "rent" not in item and len(cells) >= 2:
             item["rent"] = cells[1]
         if "renewal_date" not in item and len(cells) >= 3:
@@ -635,7 +660,11 @@ def create_app(db: Database, cfg: Config) -> Flask:
         shown = [r for r in rows if filters[flt](r)] if flt in filters else rows
         team, inactive = [], []
         if owner:
+            from .reminders import is_real_user
+
             for u in db.list_users():
+                if not is_real_user(u) and not db.list_properties(u["id"]):
+                    continue   # Sahibinden senkronunun açtığı, portföyü olmayan şifresiz kayıt
                 mine = db.list_properties(u["id"])
                 team.append(dict(u, count=len(mine), soon=sum(
                     1 for p in mine if 0 <= texts.days_left(p, t) <= 30),
@@ -657,6 +686,7 @@ def create_app(db: Database, cfg: Config) -> Flask:
             only_name=names.get(only) if only and can_view_all else None,
             flt=flt,
             vacant=[dict(p, agent=names.get(p["agent_id"], "?")) for p in vacant_props],
+            vacant_clients=agenda._client_counts(ctx, g.user) if vacant_props else {},
             focus=focus,
             greeting=greeting,
             today=t,
@@ -834,20 +864,10 @@ def create_app(db: Database, cfg: Config) -> Flask:
     def export_portfolio_csv():
         if not ctx.can_view_all(g.user):
             abort(403)
-        names = {u["id"]: u["name"] for u in db.list_users(active_only=False)}
-        buf = io.StringIO()
-        w = csv.writer(buf, delimiter=";")
-        w.writerow(["No", "Durum", "Danışman", "Mülk", "Ev sahibi", "Ev sahibi tel", "Kiracı", "Kiracı tel",
-                    "Kira", "Yenileme", "Geçen yıl %", "Planlanan %", "Planlanan kira", "Not"])
-        for status in ("active", "vacant"):
-            for p in db.list_properties(status=status):
-                w.writerow([p["id"], "Aktif" if status == "active" else "Boş", names.get(p["agent_id"], "?"),
-                            p["title"], p["landlord_name"], p["landlord_phone"], p["tenant_name"], p["tenant_phone"],
-                            p["rent"], R.fmt_date(p["renewal_date"]), p["last_increase_pct"], p["planned_pct"],
-                            p["planned_rent"], p["notes"]])
+        body = services.portfolio_csv(db, today())
         db.log(g.user["id"], "disa_aktardi", None, "portfoy.csv")
         return Response(
-            "﻿" + buf.getvalue(),
+            body,
             mimetype="text/csv; charset=utf-8",
             headers={"Content-Disposition": f"attachment; filename=portfoy_{today().isoformat()}.csv"},
         )
@@ -1048,10 +1068,14 @@ def create_app(db: Database, cfg: Config) -> Flask:
     def download_bulk_template():
         csv_content = (
             "﻿"
-            "Daire / Başlık,Kira Tutarı,Yenileme Tarihi,Kiracı Adı,Kiracı Telefon,Ev Sahibi,Ev Sahibi Telefon,Danışman,Notlar,Sözleşme Başlangıç\n"
-            "Yahya Kaptan 3+1 Daire,32000,15.11.2024,Ahmet Yılmaz,05321112233,Mehmet Demir,05423334455,Diren Doğan,1 yıllık standart kontrat,15.11.2021\n"
-            "İzmit Merkez 2+1 Ara Kat,24000,01.12.2024,Ayşe Kaya,05051234567,Ali Veli,05559876543,Diren Doğan,Kira her ayın 1'i,01.12.2019\n"
-            "Kartepe Müstakil Villa,75000,20.01.2025,Can Özkan,05339998877,Hasan Çelik,05301119988,Diren Doğan,Yıllık peşin ödendi,20.01.2016\n"
+            "Daire / Başlık,Kira Tutarı,Yenileme Tarihi,Kiracı Adı,Kiracı Telefon,Ev Sahibi,Ev Sahibi Telefon,Danışman,Notlar,"
+            "Sözleşme Başlangıç,Teslim Tarihi,Açık Adres,Kiracı TC,Ev Sahibi TC,IBAN,Depozito,Tür\n"
+            "Yahya Kaptan 3+1 Daire,32000,15.11.2027,Ahmet Yılmaz,05321112233,Mehmet Demir,05423334455,Diren Doğan,"
+            "1 yıllık standart kontrat,15.11.2021,15.11.2021,\"Yahya Kaptan Mah. Gül Sk. No:12 D:4 İzmit/Kocaeli\",,,,64000,Konut\n"
+            "İzmit Merkez 2+1 Ara Kat,24000,01.12.2026,Ayşe Kaya,05051234567,Ali Veli,05559876543,Diren Doğan,"
+            "Kira her ayın 1'i,01.12.2019,,,,,,,Konut\n"
+            "Fethiye Caddesi Dükkan,45000,20.01.2027,Can Özkan,05339998877,Hasan Çelik,05301119988,Diren Doğan,"
+            "Yıllık peşin ödendi,20.01.2016,,,,,,,İşyeri\n"
         )
         return Response(
             csv_content,

@@ -137,21 +137,48 @@ def renewal_items(ctx, user, today: date) -> list[AgendaItem]:
 
 
 # ---------------------------------------------------------------- boş mülkler
+def _client_counts(ctx, user) -> dict[int, int]:
+    """Boş dairelere uyan aktif müşteri talebi sayıları (danışman sadece kendi taleplerini sayar)."""
+    scope = ctx.scope_agent(user)
+    sql = ("SELECT m.target_id AS pid, COUNT(*) AS n FROM demand_matches m JOIN client_demands d ON d.id=m.demand_id"
+           " WHERE m.target_type='property' AND m.active=1 AND d.status='active'"
+           " AND m.status NOT IN ('dismissed','rejected')")
+    params: list[Any] = []
+    if scope is not None:
+        sql += " AND d.agent_id=?"
+        params.append(scope)
+    try:
+        return {r["pid"]: r["n"] for r in ctx.db.query(sql + " GROUP BY m.target_id", params)}
+    except Exception:  # noqa: BLE001 - CRM tabloları yoksa (eski veritabanı) sayı gösterilmez
+        return {}
+
+
 @provider("vacant")
 def vacant_items(ctx, user, today: date) -> list[AgendaItem]:
     out: list[AgendaItem] = []
+    clients = _client_counts(ctx, user)
     for p in visible_properties(ctx, user, status="vacant"):
         since = ""
+        days_empty = None
         if p["exit_date"]:
             try:
-                since = f" · {(today - date.fromisoformat(p['exit_date'])).days} gündür boş"
+                days_empty = (today - date.fromisoformat(p["exit_date"][:10])).days
+                since = f" · {days_empty} gündür boş"
             except ValueError:
                 since = ""
         url = url_for("property_view", pid=p["id"])
+        actions = [{"label": "Yeni kiracı gir", "icon": "user-plus", "url": url + "#yeni-kiraci"}]
+        tags: list[tuple[str, str]] = []
+        n = clients.get(p["id"], 0)
+        if n:
+            tags.append((f"🎯 {n} uygun müşteri", "b-gold"))
+            actions.insert(0, {"label": "Müşterilere gönder", "icon": "chat", "style": "wa",
+                               "url": url_for("property_clients", pid=p["id"])})
+        # 30 günü geçen boşluk ofise kira kaybettirir: öne çıkar
+        severity = "warning" if (days_empty or 0) >= 30 else ("match" if n else "info")
         out.append(AgendaItem(
-            severity="info", kind="vacant", title=f"Boş mülk — kiracı aranıyor: {p['title']}",
-            subtitle=f"Son kira {R.money(p['rent'])}{since}", url=url, icon="door",
-            actions=[{"label": "Yeni kiracı gir", "icon": "user-plus", "url": url + "#yeni-kiraci"}],
-            property_id=p["id"],
+            severity=severity, kind="vacant", title=f"Boş mülk — kiracı aranıyor: {p['title']}",
+            subtitle=f"Son kira {R.money(p['rent'])}{since}", url=url, icon="door", tags=tags,
+            actions=actions, property_id=p["id"], side=f"{days_empty} gün" if days_empty else "",
         ))
     return out

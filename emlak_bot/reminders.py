@@ -38,6 +38,20 @@ def local_today(cfg: Any = None) -> date:
     return datetime.now(tz).date() if tz else date.today()
 
 
+def reachable(u, messenger) -> bool:
+    """Kullanıcıya bu kanal üzerinden mesaj gidebilir mi (Telegram: sayısal sohbet kimliği)."""
+    channel = getattr(messenger, "channel", "telegram")
+    channel = "telegram" if channel in ("base", "", None) else channel   # özel/eski mesajcılar Telegram sayılır
+    if u["channel"] != channel or not u["active"]:
+        return False
+    return channel != "telegram" or str(u["chat_id"]).lstrip("-").isdigit()
+
+
+def is_real_user(u) -> bool:
+    """Giriş yapabilen gerçek kullanıcı (Sahibinden senkronunun açtığı şifresiz danışman kaydı değil)."""
+    return bool(u["password_hash"]) or u["channel"] != "web"
+
+
 def _ack_buttons(p) -> list[list[tuple[str, str]]]:
     return [[("✅ Bildirildi / ilgilendim", f"ack:{p['id']}:{p['renewal_date']}")]]
 
@@ -80,7 +94,8 @@ async def run_reminders(
             if agent and agent["active"]:
                 recipients[agent["id"]] = agent
             for u in recipients.values():
-                delivered |= await messenger.send(u["chat_id"], text, _ack_buttons(p))
+                if reachable(u, messenger):   # web'den açılmış hesapların Telegram sohbeti yoktur
+                    delivered |= await messenger.send(u["chat_id"], text, _ack_buttons(p))
             if group_chat_id:
                 delivered |= await messenger.send(group_chat_id, text, _ack_buttons(p))
 
@@ -112,6 +127,8 @@ def collect_issues(db: Database, today: date, inactivity_days: int) -> dict[str,
     cutoff = (datetime.combine(today, datetime.min.time()) - timedelta(days=inactivity_days))
     inactive = []
     for u in db.list_users("agent"):
+        if not is_real_user(u):
+            continue
         last = datetime.fromisoformat(u["last_active"]) if u["last_active"] else None
         if last is None or last < cutoff:
             inactive.append(u)
@@ -158,6 +175,8 @@ def build_owner_report(db: Database, today: date, inactivity_days: int, full: bo
         week_ago = (datetime.combine(today, datetime.min.time()) - timedelta(days=7)).isoformat()
         lines.append("👥 <b>Emlakçı bazında</b>")
         for u in db.list_users():
+            if not is_real_user(u):
+                continue
             mine = db.list_properties(u["id"])
             soon = sum(1 for p in mine if 0 <= texts.days_left(p, today) <= 30)
             n7 = db.activity_count_since(u["id"], week_ago)
@@ -172,7 +191,37 @@ def build_owner_report(db: Database, today: date, inactivity_days: int, full: bo
 
         lines.append("")
         lines.append(legal.summary_text(db, today))
+    lines.extend(crm_backup_lines(db, today, full))
     return "\n".join(lines)
+
+
+def crm_backup_lines(db: Database, today: date, full: bool) -> list[str]:
+    """Özete müşteri talepleri, kapanan işlemler ve yedek durumu (ofis sahibinin tek bakışta görmesi için)."""
+    out: list[str] = []
+    try:
+        from . import crm
+
+        st = crm.stats(db, None, today)
+        urgent = [f for f in crm.followups(db, today) if f["kind"] == "urgent"]
+        if st["active"] or full:
+            out += ["", f"🎯 <b>Müşteri talepleri:</b> {st['active']} aktif · {st['new_matches']} gönderilmeyi bekleyen "
+                        f"eşleşme · bu ay {st['sent_month']} ilan gönderildi, {st['won_month']} kazanıldı"]
+        for f in urgent[:5]:
+            out.append(f"🔴 Acil müşteri {f['idle']} gündür aranmadı: {texts.esc(f['demand']['name'])}")
+        week = (today - timedelta(days=7)).isoformat()
+        deals = db.query("SELECT kind, amount FROM deals WHERE deal_date>=?", (week,))
+        if deals or full:
+            rent = sum(1 for d in deals if d["kind"] == "kiralama")
+            out.append(f"🤝 Son 7 gün: {rent} kiralama, {len(deals) - rent} satış")
+        last_ok = db.get_setting("backup_last_ok")
+        last = db.get_setting("backup_last_attempt")
+        if last and last != last_ok:
+            out.append("🚨 <b>Son yedekleme başarısız!</b> Web panelinde Yedekleme sayfasını kontrol edin.")
+        elif full and last_ok:
+            out.append(f"🔐 Son şifreli yedek: {last_ok[:16].replace('T', ' ')}")
+    except Exception:  # noqa: BLE001 - özet, ek modüllerin hatasıyla susmamalı
+        log.exception("Özetin CRM/yedek bölümü oluşturulamadı")
+    return out
 
 
 async def run_owner_digest(
@@ -184,7 +233,8 @@ async def run_owner_digest(
     if not report:
         return
     for o in db.list_users("owner"):
-        await messenger.send(o["chat_id"], report)
+        if reachable(o, messenger):
+            await messenger.send(o["chat_id"], report)
     if group_chat_id:
         await messenger.send(group_chat_id, report)
 

@@ -112,7 +112,8 @@
     {% for p in vacant %}
     <a class="item info" href="{{ url_for('property_view', pid=p.id) }}">
       <div class="i-ic">{{ m.icon('door') }}</div>
-      <div class="i-body"><div class="i-title">{{ p.title }}</div><div class="i-sub">Son kira {{ p.rent|money }}{% if p.exit_date %} · Çıkış {{ p.exit_date|tdate }}{% endif %}{% if owner %} · {{ p.agent }}{% endif %}</div></div>
+      <div class="i-body"><div class="i-title">{{ p.title }}</div><div class="i-sub">Son kira {{ p.rent|money }}{% if p.exit_date %} · Çıkış {{ p.exit_date|tdate }}{% endif %}{% if owner %} · {{ p.agent }}{% endif %}</div>
+        {% if vacant_clients.get(p.id) %}<div class="i-meta"><span class="badge b-gold">🎯 {{ vacant_clients[p.id] }} uygun müşteri</span></div>{% endif %}</div>
       <div class="i-side">{{ m.icon('arrow-right') }}</div>
     </a>
     {% endfor %}

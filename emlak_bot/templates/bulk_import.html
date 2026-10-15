@@ -27,7 +27,7 @@
   <div data-tab-panel="paste">
     <div class="guide-box">
       <b>Nasıl?</b> Excel veya Google E-Tablolar'da satırları seçip <kbd>Ctrl</kbd>+<kbd>C</kbd>, aşağıya <kbd>Ctrl</kbd>+<kbd>V</kbd>. Sütunlar otomatik tanınır; ilk satıra başlık yazabilirsiniz.<br>
-      <span class="mute">Önerilen sıra:</span> <code>Daire · Kira · Yenileme Tarihi · Kiracı · Kiracı Tel · Ev Sahibi · Ev Sahibi Tel · Danışman · Notlar</code> — başlıklı tabloda <code>Sözleşme Başlangıç</code> sütunu da tanınır.
+      <span class="mute">Önerilen sıra:</span> <code>Daire · Kira · Yenileme Tarihi · Kiracı · Kiracı Tel · Ev Sahibi · Ev Sahibi Tel · Danışman · Notlar</code> — başlıklı tabloda <code>Sözleşme Başlangıç</code>, <code>Teslim Tarihi</code>, <code>Açık Adres</code>, <code>Kiracı TC</code>, <code>Ev Sahibi TC</code>, <code>IBAN</code>, <code>Depozito</code> ve <code>Tür</code> (Konut / İşyeri) sütunları da tanınır; T.C. ve IBAN doğrulanır, bu bilgilerle sözleşme PDF'i tek tıkla hazır olur.
     </div>
     <form method="post" action="{{ url_for('bulk_import') }}">
       {{ m.csrf_field() }}<input type="hidden" name="mode" value="paste">

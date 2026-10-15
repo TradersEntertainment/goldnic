@@ -88,3 +88,49 @@ def create_property(db: Database, user, f: dict) -> int:
     pid = db.add_property(**data)
     db.log(user["id"], "mulk_ekledi", pid, data["title"])
     return pid
+
+
+# ---------------------------------------------------------------- portföy dışa aktarma (CSV)
+CSV_HEADER = ["No", "Durum", "Daire / Başlık", "Kira Tutarı", "Yenileme Tarihi", "Kiracı Adı", "Kiracı Telefon",
+              "Ev Sahibi", "Ev Sahibi Telefon", "Danışman", "Sözleşme Başlangıç", "Teslim Tarihi", "Tür", "Açık Adres",
+              "Depozito", "Geçen yıl %", "Planlanan %", "Planlanan (₺)", "Yasal tavan %", "Notlar"]
+
+
+def portfolio_csv(db, today) -> str:
+    """Excel (Türkçe, ';' ayraçlı, BOM'lu) portföy dökümü. Sütun adları Toplu Giriş ile uyumludur: dosya
+    düzenlenip geri yüklenebilir. KVKK gereği T.C. kimlik ve IBAN dışa aktarılmaz."""
+    import csv
+    import io
+    from datetime import date as _date
+
+    from . import law as L
+    from . import tufe
+
+    rates = tufe.load_rates(db)
+    names = {u["id"]: u["name"] for u in db.list_users(active_only=False)}
+
+    def num(x):
+        if x is None:
+            return ""
+        return (f"{x:.2f}".rstrip("0").rstrip(".")).replace(".", ",")
+
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(CSV_HEADER)
+    for status in ("active", "vacant"):
+        for p in db.list_properties(status=status):
+            kind = p["property_kind"] if p["property_kind"] in ("konut", "isyeri") else "konut"
+            try:
+                cap = L.rent_cap(_date.fromisoformat(p["renewal_date"]), rates, kind).cap_pct
+            except ValueError:
+                cap = None
+            w.writerow([
+                p["id"], "Aktif" if status == "active" else "Boş", p["title"], num(p["rent"]),
+                R.fmt_date(p["renewal_date"]), p["tenant_name"] or "", p["tenant_phone"] or "", p["landlord_name"] or "",
+                p["landlord_phone"] or "", names.get(p["agent_id"], "?"),
+                R.fmt_date(p["lease_start_date"]) if p["lease_start_date"] else "",
+                R.fmt_date(p["delivery_date"]) if p["delivery_date"] else "", "İşyeri" if kind == "isyeri" else "Konut",
+                p["address"] or "", num(p["deposit_amount"]), num(p["last_increase_pct"]), num(p["planned_pct"]),
+                num(p["planned_rent"]), num(cap), (p["notes"] or "").replace("\n", " "),
+            ])
+    return "\ufeff" + buf.getvalue()

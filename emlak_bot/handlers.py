@@ -1,7 +1,6 @@
 """Telegram komutları."""
 from __future__ import annotations
 
-import csv
 import io
 import logging
 from datetime import date, datetime
@@ -344,12 +343,49 @@ async def cmd_property(update: Update, ctx, user):
         await reply(update, err)
         return
     hist = db.history(p["id"])
-    text = texts.property_card(p, _agent_name(db, p), _today(ctx), legal_cap_pct(db, p))
+    today = _today(ctx)
+    text = texts.property_card(p, _agent_name(db, p), today, legal_cap_pct(db, p))
     if hist:
         text += "\n\n🗂 <b>Kira geçmişi</b>\n" + "\n".join(
             f"{R.fmt_date(h['effective_date'])}: {R.money(h['old_rent'])} → "
             f"{R.money(h['new_rent'])} ({R.pct_str(h['pct'])})" for h in hist)
+    text += "".join(_property_extras(db, p, today, user))
+    cfg = _cfg(ctx)
+    if cfg.web_url:
+        text += f'\n\n🔗 <a href="{cfg.web_url}/mulk/{p["id"]}">Web panelinde aç</a>'
     await reply(update, text)
+
+
+def _property_extras(db, p, today, user) -> list[str]:
+    """Mülk kartına hukuki radar, uygun müşteriler ve son resmi belgeler."""
+    out: list[str] = []
+    try:
+        from . import legal
+
+        alerts = [a for a in legal.property_legal(db, p, today, with_market=False).alerts if a.kind != "veri"]
+        if alerts:
+            out.append("\n\n⚖️ <b>Hukuki radar</b>")
+            out += [f"\n• {texts.esc(a.title)}" + (f" — {a.due.strftime('%d.%m.%Y')}" if a.due else "")
+                    for a in alerts[:4]]
+    except Exception:  # noqa: BLE001 - ek bilgi kartı düşürmemeli
+        log.exception("Mülk kartı hukuk özeti")
+    if p["status"] == "vacant":
+        scope = None if user["role"] == "owner" or user["can_see_all"] else user["id"]
+        rows = db.query(
+            "SELECT d.name, d.phone, m.score FROM demand_matches m JOIN client_demands d ON d.id=m.demand_id"
+            " WHERE m.target_type='property' AND m.target_id=? AND m.active=1 AND d.status='active'"
+            " AND m.status NOT IN ('dismissed','rejected')" + (" AND d.agent_id=?" if scope else "")
+            + " ORDER BY m.score DESC LIMIT 5", (p["id"], scope) if scope else (p["id"],))
+        if rows:
+            out.append(f"\n\n🎯 <b>Bu daireye uygun {len(rows)} müşteri</b>")
+            out += [f"\n• %{r['score']} {texts.esc(r['name'])} {texts.esc(r['phone'] or '')}" for r in rows]
+    docs = db.query("SELECT doc_no, kind FROM documents WHERE property_id=? ORDER BY id DESC LIMIT 3", (p["id"],))
+    if docs:
+        from .documents import DOC_KINDS
+
+        out.append("\n\n📄 <b>Son belgeler:</b> " + ", ".join(f"{DOC_KINDS.get(d['kind'], d['kind'])} {d['doc_no']}"
+                                                         for d in docs))
+    return out
 
 
 # ---------------------------------------------------------------- kira artışı
@@ -747,16 +783,11 @@ async def cmd_activity(update: Update, ctx, user):
 
 @registered(owner_only=True)
 async def cmd_csv(update: Update, ctx, user):
+    from .services import portfolio_csv
+
     db = _db(ctx)
-    buf = io.StringIO()
-    w = csv.writer(buf, delimiter=";")
-    w.writerow(["No", "Emlakçı", "Mülk", "Ev sahibi", "Ev sahibi tel", "Kiracı", "Kiracı tel", "Kira",
-                "Yenileme", "Geçen yıl %", "Planlanan %", "Planlanan kira"])
-    for p in db.list_properties():
-        w.writerow([p["id"], _agent_name(db, p), p["title"], p["landlord_name"], p["landlord_phone"],
-                    p["tenant_name"], p["tenant_phone"], p["rent"], R.fmt_date(p["renewal_date"]),
-                    p["last_increase_pct"], p["planned_pct"], p["planned_rent"]])
-    data = io.BytesIO(("\ufeff" + buf.getvalue()).encode("utf-8"))
+    data = io.BytesIO(portfolio_csv(db, _today(ctx)).encode("utf-8"))
+    db.log(user["id"], "disa_aktardi", None, "portfoy.csv (Telegram)")
     data.name = f"portfoy_{_today(ctx).isoformat()}.csv"
     await update.effective_message.reply_document(data)
 

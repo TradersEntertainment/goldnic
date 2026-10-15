@@ -706,6 +706,8 @@ class Database:
                 errors.append(f"Satır #{idx} ({title}): Zaten kayıtlı (#{seen[key]}), tekrar eklenmedi.")
                 continue
 
+            extra, warnings = _contract_fields(item)
+            errors.extend(f"Satır #{idx} ({title}): {w}" for w in warnings)
             try:
                 pid = self.add_property(
                     agent_id=agent_id,
@@ -718,6 +720,7 @@ class Database:
                     renewal_date=renewal_date,
                     notes=notes,
                     lease_start_date=lease_start,
+                    **extra,
                 )
                 seen[key] = pid
                 success_count += 1
@@ -1042,6 +1045,47 @@ class Database:
             self.record_deal("kiralama", old["agent_id"], rent, start_date or now_iso()[:10], property_id=pid,
                              listed_on=old["exit_date"], client_name=tenant_name)
         self.deactivate_matches("property", pid)
+
+
+def _contract_fields(item: dict) -> tuple[dict[str, Any], list[str]]:
+    """Toplu girişteki isteğe bağlı sözleşme/belge sütunları: doğrulanır, hatalı olan atlanıp not edilir."""
+    from . import rent as R
+    from .validators import clean_tc, iban_clean, iban_valid, tc_kimlik_valid
+
+    out: dict[str, Any] = {}
+    warnings: list[str] = []
+    for col, label in (("tenant_tc", "Kiracı T.C."), ("landlord_tc", "Ev sahibi T.C.")):
+        raw = str(item.get(col) or "").strip()
+        if raw:
+            if tc_kimlik_valid(raw):
+                out[col] = clean_tc(raw)
+            else:
+                warnings.append(f"{label} geçersiz ({raw}); boş bırakıldı, kayıt eklendi.")
+    raw = str(item.get("landlord_iban") or "").strip()
+    if raw:
+        if iban_valid(raw):
+            out["landlord_iban"] = iban_clean(raw)
+        else:
+            warnings.append(f"IBAN geçersiz ({raw}); boş bırakıldı, kayıt eklendi.")
+    raw = str(item.get("deposit_amount") or "").strip()
+    if raw:
+        try:
+            out["deposit_amount"] = R.parse_amount(raw)
+        except ValueError:
+            warnings.append(f"Depozito okunamadı ({raw}).")
+    raw = str(item.get("delivery_date") or "").strip()
+    if raw:
+        try:
+            out["delivery_date"] = R.parse_date(raw).isoformat()
+        except ValueError:
+            warnings.append(f"Teslim tarihi okunamadı ({raw}).")
+    if str(item.get("address") or "").strip():
+        out["address"] = str(item["address"]).strip()
+    kind = normalize_title(str(item.get("property_kind") or ""))
+    if kind:
+        out["property_kind"] = "isyeri" if any(w in kind for w in ("isyeri", "is yeri", "dukkan", "ofis", "magaza",
+                                                                    "depo", "ticari")) else "konut"
+    return out, warnings
 
 
 def normalize_title(title: str) -> str:
