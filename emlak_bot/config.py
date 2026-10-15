@@ -39,7 +39,7 @@ def load_config() -> Config:
     return Config(
         bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         owner_ids=frozenset(owners),
-        db_path=os.getenv("DB_PATH", "emlak.db"),
+        db_path=os.getenv("DB_PATH") or ("/data/emlak.db" if os.path.isdir("/data") else "emlak.db"),
         tz=ZoneInfo(os.getenv("TIMEZONE", "Europe/Istanbul")),
         reminder_hour=int(os.getenv("REMINDER_HOUR", "9")),
         inactivity_days=int(os.getenv("INACTIVITY_DAYS", "7")),

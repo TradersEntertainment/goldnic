@@ -37,6 +37,7 @@ def main() -> None:
 
     app = Application.builder().token(cfg.bot_token).build()
     db = Database(cfg.db_path)
+    logging.getLogger("emlak_bot").info("Veritabanı: %s", cfg.db_path)
     messenger = TelegramMessenger(app.bot)
     app.bot_data.update(db=db, cfg=cfg, messenger=messenger)
     handlers.register(app)
