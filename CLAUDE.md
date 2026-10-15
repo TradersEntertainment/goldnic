@@ -1,6 +1,10 @@
 # GOLD NICOMEDIA REAL ESTATE OS — MASTER ARCHITECTURE & DEVELOPMENT DIRECTIVE
 > **MİSYON:** Bu proje, Kocaeli / İzmit bölgesinin lider emlak ofisi **Gold Nicomedia** (Ofis Sahibi: **Diren Doğan**) için geliştirilen, sıradan bir emlak takip uygulamasının çok ötesinde, sektördeki hiçbir olayı kaçırmayan, yapay zeka destekli, ultra lüks tasarımlı ve kurumsal düzeyde çalışan **hepsi-bir-arada Emlak İşletim Sistemi'dir (Real Estate OS)**.
 
+🔗 **GitHub Repository:** [https://github.com/TradersEntertainment/goldnic](https://github.com/TradersEntertainment/goldnic)  
+🚀 **Git Clone:** `git clone https://github.com/TradersEntertainment/goldnic.git`  
+🌿 **Canlı Dağıtım Dalı:** `main` (Railway otomatik CI/CD entegreli)
+
 ---
 
 ## 🏛️ SİSTEM ÖZETİ VE MEVCUT MİMARİ
