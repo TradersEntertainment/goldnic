@@ -54,6 +54,7 @@ def create_app(db: Database, cfg: Config) -> Flask:
     )
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     app.jinja_env.filters.update(money=R.money, pct=R.pct_str, tdate=R.fmt_date)
+    app.jinja_env.globals["brand"] = cfg.brand_name
     fails: dict[str, list[float]] = {}
 
     # ------------------------------------------------------------ güvenlik

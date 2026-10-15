@@ -1,14 +1,67 @@
-{% extends "base.html" %}
-{% block title %}Giriş{% endblock %}
-{% block body %}
-<div class="card login">
-  <h1>🏢 Giriş</h1>
-  <form method="post" autocomplete="on">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label>Kullanıcı adı</label><input name="username" autocomplete="username" required autofocus>
-    <label>Şifre</label><input type="password" name="password" autocomplete="current-password" required>
-    <button class="btn" style="width:100%">Giriş yap</button>
-  </form>
-  <p class="mute" style="font-size:13px">Kullanıcı adı ve şifrenizi Telegram botuna <code>/sifre kullaniciadi</code> yazarak alırsınız.</p>
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Giriş — {{ brand }}</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;font:15px/1.55 system-ui,"Segoe UI",Roboto,sans-serif;color:#1c2430;background:#0f172a}
+.wrap{min-height:100vh;display:grid;grid-template-columns:1.1fr 1fr}
+.hero{background:radial-gradient(1200px 600px at 10% 0%,#2f6df6 0%,transparent 60%),radial-gradient(900px 500px at 100% 100%,#7c3aed 0%,transparent 55%),#0f172a;color:#fff;padding:56px 56px;display:flex;flex-direction:column;justify-content:center}
+.logo{display:flex;align-items:center;gap:12px;font-weight:700;font-size:22px;letter-spacing:.2px}
+.logo i{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:#ffffff1f;border:1px solid #ffffff33;font-style:normal;font-size:24px}
+.hero h2{font-size:34px;line-height:1.2;margin:34px 0 12px;max-width:520px}
+.hero p.lead{color:#cbd5e1;max-width:520px;margin:0 0 28px;font-size:16px}
+.feat{list-style:none;margin:0;padding:0;display:grid;gap:14px;max-width:520px}
+.feat li{display:flex;gap:12px;align-items:flex-start;color:#e2e8f0}
+.feat b{color:#fff;display:block}
+.feat span.ic{flex:0 0 36px;height:36px;border-radius:10px;background:#ffffff18;display:grid;place-items:center;font-size:18px}
+.panel{background:#f4f6f9;display:flex;align-items:center;justify-content:center;padding:32px}
+.card{width:100%;max-width:380px;background:#fff;border:1px solid #e3e8ef;border-radius:16px;padding:32px;box-shadow:0 10px 40px #0f172a14}
+.card h1{margin:0 0 4px;font-size:24px}
+.card .sub{color:#6b7685;margin:0 0 20px;font-size:14px}
+label{display:block;margin:14px 0 5px;font-weight:600;font-size:13px}
+input{width:100%;padding:11px 12px;border:1px solid #cfd6df;border-radius:9px;font:inherit;background:#fff}
+input:focus{outline:2px solid #2f6df655;border-color:#2f6df6}
+button{width:100%;margin-top:20px;background:linear-gradient(135deg,#2f6df6,#5b4bf0);color:#fff;border:0;border-radius:9px;padding:12px;font:inherit;font-weight:600;cursor:pointer}
+button:hover{filter:brightness(1.07)}
+.err{background:#ffebe9;color:#82071e;padding:10px 12px;border-radius:9px;margin-bottom:6px;font-size:14px}
+.ok{background:#dafbe1;color:#0a3d18;padding:10px 12px;border-radius:9px;margin-bottom:6px;font-size:14px}
+.help{margin-top:18px;padding-top:16px;border-top:1px solid #eef1f5;color:#6b7685;font-size:13px}
+.help code{background:#f1f4f8;padding:1px 6px;border-radius:5px}
+.foot{margin-top:18px;text-align:center;color:#94a3b8;font-size:12px}
+@media(max-width:860px){.wrap{grid-template-columns:1fr}.hero{padding:32px 24px}.hero h2{font-size:26px}.feat{display:none}.panel{padding:24px 16px 40px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="hero">
+    <div class="logo"><i>🏢</i>{{ brand }}</div>
+    <h2>Portföyünüz ve kira artışlarınız tek ekranda.</h2>
+    <p class="lead">Hangi emlakçı hangi mülkle ilgileniyor, kira yenilemesi ne zaman, geçen yıl ne kadar artış yapıldı — hepsi otomatik takip edilir.</p>
+    <ul class="feat">
+      <li><span class="ic">🔔</span><div><b>Otomatik hatırlatma</b>Yenilemeye 30, 15, 7 gün kala Telegram'dan bildirim.</div></li>
+      <li><span class="ic">📈</span><div><b>Kira artış takibi</b>Geçen yıl ve bu yıl planlanan artış, TÜFE sınırı uyarısı.</div></li>
+      <li><span class="ic">👥</span><div><b>Ekip şeffaflığı</b>Ofis sahibi tüm emlakçıların portföyünü ve işlemlerini görür; ayrılan çalışanın portföyü kaybolmaz.</div></li>
+    </ul>
+  </section>
+  <section class="panel">
+    <div class="card">
+      <h1>Hoş geldiniz</h1>
+      <p class="sub">Hesabınızla giriş yapın.</p>
+      {% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, m in msgs %}<div class="{{ 'ok' if cat == 'ok' else 'err' }}">{{ m }}</div>{% endfor %}{% endwith %}
+      <form method="post" autocomplete="on">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <label for="u">Kullanıcı adı</label>
+        <input id="u" name="username" autocomplete="username" required autofocus>
+        <label for="p">Şifre</label>
+        <input id="p" type="password" name="password" autocomplete="current-password" required>
+        <button type="submit">Giriş yap</button>
+      </form>
+      <div class="help">Giriş bilgisi yok mu? Telegram botuna <code>/sifre kullaniciadi</code> yazarak kullanıcı adı ve şifrenizi alın.</div>
+    </div>
+  </section>
 </div>
-{% endblock %}
+</body>
+</html>

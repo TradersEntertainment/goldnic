@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Emlak Portföy{% endblock %}</title>
+<title>{% block title %}{{ brand }}{% endblock %}</title>
 <style>
 :root{--bg:#f4f6f9;--card:#fff;--ink:#1c2430;--mute:#6b7685;--pri:#1f6feb;--ok:#1a7f37;--warn:#b7791f;--err:#cf222e;--line:#e3e8ef}
 *{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
@@ -30,7 +30,7 @@ input,textarea{width:100%;padding:9px;border:1px solid #cfd6df;border-radius:7px
 <body>
 {% if g.user %}
 <header>
-  <strong>🏢 Emlak Portföy</strong>
+  <strong>🏢 {{ brand }}</strong>
   <a href="{{ url_for('dashboard') }}">Panel</a>
   <a href="{{ url_for('add') }}">+ Mülk ekle</a>
   {% if g.user.role == 'owner' %}<a href="{{ url_for('activity') }}">Aktivite</a>{% endif %}

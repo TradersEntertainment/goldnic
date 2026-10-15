@@ -26,6 +26,7 @@ class Config:
     web_url: str
     group_chat_id: str = ""
     setup_code: str = ""
+    brand_name: str = "Gold Nicomedia"
 
 
 def load_config() -> Config:
@@ -63,4 +64,5 @@ def load_config() -> Config:
         web_url=os.getenv("WEB_URL", "").rstrip("/"),
         group_chat_id=group,
         setup_code=os.getenv("SETUP_CODE", "").strip(),
+        brand_name=os.getenv("BRAND_NAME", "Gold Nicomedia").strip() or "Gold Nicomedia",
     )
