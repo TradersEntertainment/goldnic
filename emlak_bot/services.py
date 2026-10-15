@@ -36,26 +36,55 @@ def renew(db: Database, user, p, raw_new: str | None):
     return new, pct, next_date
 
 
+TEXT_FIELDS = ("landlord_name", "landlord_phone", "tenant_name", "tenant_phone", "notes")
+
+
+def parse_property_form(f, partial: bool = False) -> dict:
+    """Mülk formunu doğrular ve veritabanı alanlarına çevirir.
+
+    partial=True (düzenleme): sadece formda gelen alanlar döner.
+    """
+    def given(key: str) -> bool:
+        return not partial or key in f
+
+    out: dict = {}
+    if given("title"):
+        title = (f.get("title") or "").strip()
+        if not title:
+            raise ValueError("Mülk adı/adresi gerekli.")
+        out["title"] = title
+    for key in TEXT_FIELDS:
+        if given(key):
+            out[key] = (f.get(key) or "").strip() or None
+    if given("rent"):
+        out["rent"] = R.parse_amount(f.get("rent", ""))
+    if given("renewal_date"):
+        out["renewal_date"] = R.parse_date(f.get("renewal_date", "")).isoformat()
+    if "lease_start_date" in f:
+        raw = (f.get("lease_start_date") or "").strip()
+        out["lease_start_date"] = R.parse_date(raw).isoformat() if raw else None
+        if out["lease_start_date"] and out.get("renewal_date") and out["lease_start_date"] > out["renewal_date"]:
+            raise ValueError("Sözleşme başlangıç tarihi yenileme tarihinden sonra olamaz.")
+    if "last_increase_pct" in f:
+        raw = (f.get("last_increase_pct") or "").strip()
+        if raw:
+            pct = R.parse_pct(raw)
+            out["last_increase_pct"] = pct
+            if out.get("rent"):
+                out["last_increase_amount"] = round(out["rent"] - out["rent"] / (1 + pct / 100), 2)
+        elif partial:
+            out["last_increase_pct"] = None
+            out["last_increase_amount"] = None
+    return out
+
+
 def create_property(db: Database, user, f: dict) -> int:
     """Web formundan mülk oluşturur."""
-    title = (f.get("title") or "").strip()
-    if not title:
-        raise ValueError("Mülk adı/adresi gerekli.")
-    rent = R.parse_amount(f.get("rent", ""))
-    renewal = R.parse_date(f.get("renewal_date", ""))
-    data = dict(
-        agent_id=user["id"], title=title, rent=rent, renewal_date=renewal.isoformat(),
-        landlord_name=(f.get("landlord_name") or "").strip() or None,
-        landlord_phone=(f.get("landlord_phone") or "").strip() or None,
-        tenant_name=(f.get("tenant_name") or "").strip() or None,
-        tenant_phone=(f.get("tenant_phone") or "").strip() or None,
-        notes=(f.get("notes") or "").strip() or None,
-    )
-    last = (f.get("last_increase_pct") or "").strip()
-    if last:
-        pct = R.parse_pct(last)
-        data["last_increase_pct"] = pct
-        data["last_increase_amount"] = round(rent - rent / (1 + pct / 100), 2)
+    data = parse_property_form(f)
+    data["agent_id"] = user["id"]
+    if data.get("last_increase_pct") is None:
+        data.pop("last_increase_pct", None)
+        data.pop("last_increase_amount", None)
     pid = db.add_property(**data)
-    db.log(user["id"], "mulk_ekledi", pid, title)
+    db.log(user["id"], "mulk_ekledi", pid, data["title"])
     return pid

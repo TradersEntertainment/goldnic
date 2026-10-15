@@ -1,0 +1,3 @@
+{% import "_macros.html" as m with context %}{% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, msg in msgs %}
+<div class="flash {{ cat }}" role="status">{{ m.icon('check' if cat == 'ok' else 'alert') }}<div>{{ msg }}</div><button class="flash-x" type="button" aria-label="Kapat">&times;</button></div>
+{% endfor %}{% endwith %}

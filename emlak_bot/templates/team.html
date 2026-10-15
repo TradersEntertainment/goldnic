@@ -1,167 +1,61 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m with context %}
 {% block title %}Ekip ve Kullanıcı Yönetimi — {{ brand }}{% endblock %}
-
 {% block body %}
-<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px">
-  <div>
-    <h1 style="margin:0">👥 Ekip ve Kullanıcı Yönetimi</h1>
-    <span class="mute">Danışman hesapları, şifreleri ve portföy görünürlük yetkileri</span>
-  </div>
-  <div>
-    <a href="{{ url_for('dashboard') }}" class="btn alt" style="margin:0">← Panele Dön</a>
-  </div>
+<div class="page-head">
+  <div><div class="eyebrow">Yönetim</div><h1>Ekip ve Kullanıcı Yönetimi</h1><div class="sub">Danışman hesapları, şifreler, portföy görünürlüğü ve devir işlemleri.</div></div>
+  <div class="actions"><button class="btn" type="button" data-open="addUserModal">{{ m.icon('user-plus') }}Yeni danışman</button></div>
 </div>
 
-<div class="two">
-  <!-- YENİ KULLANICI EKLEME KARTI -->
-  <div class="card">
-    <h2>+ Yeni Danışman / Kullanıcı Ekle</h2>
-    <p class="mute" style="font-size:13px;margin-top:0">
-      Ofise yeni katılan bir emlakçıyı ekleyebilir veya mevcut bir danışmana giriş şifresi verebilirsiniz.
-    </p>
-
-    <form method="post" action="{{ url_for('team_add') }}">
-      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-
-      <label for="new_name">Ad Soyad (Sahibinden Danışman İsmi): *</label>
-      <input type="text" name="name" id="new_name" placeholder="Örn: Burkay Yıldırım" required>
-
-      <div class="two" style="margin-top:8px">
-        <div>
-          <label for="new_username">Giriş Kullanıcı Adı: *</label>
-          <input type="text" name="username" id="new_username" placeholder="Örn: burkayy" required>
-        </div>
-        <div>
-          <label for="new_password">Şifre (En az 8 karakter): *</label>
-          <input type="password" name="password" id="new_password" required minlength="8" placeholder="••••••••">
-        </div>
-      </div>
-
-      <div class="two" style="margin-top:8px">
-        <div>
-          <label for="new_role">Kullanıcı Rolü:</label>
-          <select name="role" id="new_role">
-            <option value="agent" selected>Danışman (Emlakçı)</option>
-            <option value="owner">Yönetici (Ofis Sahibi)</option>
-          </select>
-        </div>
-        <div style="display:flex;align-items:center;margin-top:24px">
-          <label style="font-weight:normal;display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" name="can_see_all" value="1" style="width:auto">
-            <span>Tüm ilanları ve mülkleri görebilsin</span>
-          </label>
-        </div>
-      </div>
-
-      <div style="background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:8px 12px;margin-top:10px;font-size:12px;color:var(--mute)">
-        💡 <b>Not:</b> Kutu işaretlenmezse danışman <b>sadece kendi adına kayıtlı ilan ve mülkleri</b> görür. Kendisine ait özel notları diğer emlakçılar okuyamaz.
-      </div>
-
-      <button type="submit" class="btn ok" style="margin-top:14px;width:100%">Kullanıcıyı Kaydet</button>
-    </form>
-  </div>
-
-  <!-- BİLGİLENDİRME & YETKİ ÖZETİ -->
-  <div class="card" style="background:#fdfdfe">
-    <h2>🔒 İlan ve Not Gizliliği</h2>
-    <div style="font-size:13px;line-height:1.6;color:#2c3e50">
-      <p>
-        <b>Gold Nicomedia Güvenlik Politikası:</b>
-      </p>
-      <ul>
-        <li><b>Diren Doğan (Yönetici):</b> Tüm ofisin kira takvimini, Sahibinden ilanlarını, kira artış oranlarını ve danışman aktivitelerini eksiksiz görür.</li>
-        <li><b>Danışmanlar (Varsayılan):</b> Sadece kendi ilanlarını ve portföyünü görür. Kendi mülklerine ekledikleri özel müşteri/mal sahibi notları diğer danışmanlara kapalıdır.</li>
-        <li><b>Özel İzin Verilenler:</b> Diren Doğan dilediği danışmana aşağıdaki listeden <b>"Tümünü Görme İzni"</b> verebilir.</li>
-      </ul>
-    </div>
-  </div>
+<div class="kpis">
+  <div class="kpi prime"><div class="k-ic">{{ m.icon('users') }}</div><b class="num">{{ users|selectattr('active')|list|length }}</b><span>Aktif kullanıcı</span></div>
+  <div class="kpi"><div class="k-ic">{{ m.icon('home') }}</div><b class="num">{{ users|sum(attribute='prop_count') }}</b><span>Takipteki mülk</span></div>
+  <div class="kpi"><div class="k-ic">{{ m.icon('building') }}</div><b class="num">{{ users|sum(attribute='listing_count') }}</b><span>Sahibinden ilanı</span></div>
+  <div class="kpi warn"><div class="k-ic">{{ m.icon('calendar') }}</div><b class="num">{{ users|sum(attribute='soon') }}</b><span>30 gün içinde yenileme</span></div>
 </div>
 
-<!-- KULLANICI LİSTESİ -->
-<div class="card" style="margin-top:20px">
-  <h2>📋 Kayıtlı Ekip Üyeleri ({{ users|length }})</h2>
-  
-  <table>
-    <thead>
-      <tr>
-        <th>Ad Soyad & Kullanıcı Adı</th>
-        <th>Rol</th>
-        <th>Portföy (Mülk)</th>
-        <th>Sahibinden İlanı</th>
-        <th>İlan Görünürlük Yetkisi</th>
-        <th>Durum</th>
-        <th>Son Giriş</th>
-        <th>İşlemler</th>
-      </tr>
-    </thead>
+<div class="card">
+  <div class="card-h"><h2>{{ m.icon('users') }}Kayıtlı ekip üyeleri ({{ users|length }})</h2></div>
+  <div class="table-wrap">
+  <table class="rt">
+    <thead><tr><th>Ad soyad</th><th>Rol</th><th>Portföy</th><th>İlan</th><th>Görünürlük</th><th>Durum</th><th>Son giriş</th><th>İşlemler</th></tr></thead>
     <tbody>
       {% for u in users %}
-      <tr style="{% if not u.active %}opacity:0.6;background:#fbfbfb{% endif %}">
-        <td>
-          <strong>{{ u.name }}</strong>
-          {% if u.username %}
-          <br><small class="mute">@{{ u.username }}</small>
+      <tr style="{% if not u.active %}opacity:.55{% endif %}">
+        <td class="rt-main"><div class="row"><span class="avatar">{{ u.name|initials }}</span><div><span class="t-title">{{ u.name }}</span>
+          {% if u.username %}<span class="t-sub">@{{ u.username }}</span>{% else %}<span class="t-sub warn">Giriş hesabı tanımlanmamış</span>{% endif %}</div></div></td>
+        <td data-label="Rol">{% if u.role == 'owner' %}<span class="badge b-gold">{{ m.icon('crown') }}Ofis sahibi</span>{% else %}<span class="badge">{{ m.icon('user') }}Danışman</span>{% endif %}</td>
+        <td data-label="Portföy"><b class="num">{{ u.prop_count }}</b> mülk<span class="t-sub">{{ u.rent|money }}{% if u.soon %} · {{ u.soon }} yaklaşan{% endif %}</span></td>
+        <td data-label="İlan"><b class="num">{{ u.listing_count }}</b></td>
+        <td data-label="Görünürlük">
+          {% if u.role == 'owner' %}<span class="mute">Tam yetkili</span>
           {% else %}
-          <br><small class="warn">Giriş hesabı tanımlanmamış</small>
-          {% endif %}
-        </td>
-        <td>
-          {% if u.role == 'owner' %}
-          <span class="badge" style="background:#14213d;color:#fff;border:0">👑 Ofis Sahibi</span>
-          {% else %}
-          <span class="badge badge-agent">👤 Danışman</span>
-          {% endif %}
-        </td>
-        <td><b>{{ u.prop_count }}</b> mülk</td>
-        <td><b>{{ u.listing_count }}</b> ilan</td>
-        <td>
-          {% if u.role == 'owner' %}
-          <span class="mute">Tam Yetkili</span>
-          {% elif u.can_see_all %}
-          <span class="good" style="font-weight:600">🟢 Herkesi Görebilir</span>
-          <form method="post" action="{{ url_for('team_update_perm', uid=u.id) }}" style="display:inline;margin-left:6px">
-            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <input type="hidden" name="can_see_all" value="0">
-            <button type="submit" class="btn sm alt" title="Sadece kendi ilanlarına kısıtla">Kısıtla</button>
-          </form>
-          {% else %}
-          <span class="warn" style="font-weight:600">🔒 Sadece Kendi İlanları</span>
-          <form method="post" action="{{ url_for('team_update_perm', uid=u.id) }}" style="display:inline;margin-left:6px">
-            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-            <input type="hidden" name="can_see_all" value="1">
-            <button type="submit" class="btn sm ok" title="Tüm ilanları görme izni ver">İzin Ver</button>
+          <form method="post" action="{{ url_for('team_update_perm', uid=u.id) }}" class="row">
+            {{ m.csrf_field() }}
+            <input type="hidden" name="role" value="{{ u.role }}">
+            {% if u.can_see_all %}
+              <span class="badge b-ok">Herkesi görür</span><input type="hidden" name="can_see_all" value="0"><button type="submit" class="btn xs ghost">Kısıtla</button>
+            {% else %}
+              <span class="badge b-warn">{{ m.icon('lock') }}Sadece kendi</span><input type="hidden" name="can_see_all" value="1"><button type="submit" class="btn xs ok">İzin ver</button>
+            {% endif %}
           </form>
           {% endif %}
         </td>
-        <td>
-          {% if u.active %}
-          <span class="good">Aktif</span>
-          {% else %}
-          <span class="bad">Pasif</span>
-          {% endif %}
-        </td>
-        <td>
-          <small class="mute">{{ u.last_active[:16].replace('T', ' ') if u.last_active else 'Henüz girmedi' }}</small>
-        </td>
-        <td>
-          <div style="display:flex;gap:6px;align-items:center">
-            <button type="button" class="btn sm alt" onclick="openPwdModal({{ u.id }}, '{{ u.name|escape }}')">
-              🔑 Şifre
-            </button>
-
+        <td data-label="Durum">{% if u.active %}<span class="good">Aktif</span>{% else %}<span class="bad">Pasif</span>{% endif %}</td>
+        <td data-label="Son giriş"><span class="mute">{{ u.last_active|dt if u.last_active else 'Henüz girmedi' }}</span></td>
+        <td class="rt-actions">
+          <div class="row">
+            <button type="button" class="btn xs ghost" data-open="pwdModal"
+                    data-fill='{{ {"action": url_for("team_reset_password", uid=u.id), "text": {"#pwdModalName": u.name}}|tojson }}'>{{ m.icon('key') }}Şifre</button>
             {% if u.id != g.user.id %}
-            <form method="post" action="{{ url_for('team_toggle_status', uid=u.id) }}" style="display:inline">
-              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-              {% if u.active %}
-              <button type="submit" class="btn sm danger" onclick="return confirm('Kullanıcı pasife alınsın mı? Giriş yapamayacaktır.')">
-                Durdur
-              </button>
-              {% else %}
-              <button type="submit" class="btn sm ok">
-                Aktifleştir
-              </button>
+              {% if u.active and u.prop_count %}
+              <button type="button" class="btn xs ghost" data-open="transferModal"
+                      data-fill='{{ {"action": url_for("team_transfer_properties", uid=u.id), "text": {"#transferName": u.name, "#transferCount": u.prop_count ~ " mülk"}}|tojson }}'>{{ m.icon('swap') }}Devret</button>
               {% endif %}
-            </form>
+              <form method="post" action="{{ url_for('team_toggle_status', uid=u.id) }}" {% if u.active %}data-confirm="{{ u.name }} pasife alınsın mı? Giriş yapamayacak."{% endif %}>
+                {{ m.csrf_field() }}
+                {% if u.active %}<button type="submit" class="btn xs danger">Durdur</button>{% else %}<button type="submit" class="btn xs ok">Aktifleştir</button>{% endif %}
+              </form>
             {% endif %}
           </div>
         </td>
@@ -169,43 +63,61 @@
       {% endfor %}
     </tbody>
   </table>
-</div>
-
-<!-- ŞİFRE DEĞİŞTİRME MODALI -->
-<div id="pwdModal" class="modal-overlay" onclick="if(event.target===this)closePwdModal()">
-  <div class="modal-box" style="max-width:440px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:10px">
-      <h2 style="margin:0">🔑 Şifre Sıfırla</h2>
-      <button type="button" onclick="closePwdModal()" style="background:none;border:0;font-size:22px;cursor:pointer;color:var(--mute)">&times;</button>
-    </div>
-
-    <form id="pwdForm" method="post" action="">
-      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-
-      <div style="background:#f4f6f9;padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:13px">
-        Kullanıcı: <strong id="pwdModalName">-</strong>
-      </div>
-
-      <label for="new_password_input">Yeni Şifre (En az 8 karakter): *</label>
-      <input type="password" name="new_password" id="new_password_input" required minlength="8" placeholder="••••••••">
-
-      <div style="display:flex;gap:10px;margin-top:16px">
-        <button type="submit" class="btn ok" style="flex:1">Şifreyi Güncelle</button>
-        <button type="button" class="btn alt" onclick="closePwdModal()">Vazgeç</button>
-      </div>
-    </form>
   </div>
 </div>
 
-<script>
-function openPwdModal(uid, name) {
-  document.getElementById('pwdForm').action = '/ekip/' + uid + '/sifre';
-  document.getElementById('pwdModalName').textContent = name;
-  document.getElementById('new_password_input').value = '';
-  document.getElementById('pwdModal').classList.add('active');
-}
-function closePwdModal() {
-  document.getElementById('pwdModal').classList.remove('active');
-}
-</script>
+<div class="card flat">
+  <div class="card-h"><h2>{{ m.icon('lock') }}İlan ve not gizliliği</h2></div>
+  <ul class="mute mb0" style="padding-left:18px">
+    <li><b class="strong">Ofis sahibi:</b> tüm kira takvimini, ilanları, artış oranlarını ve danışman aktivitelerini eksiksiz görür.</li>
+    <li><b class="strong">Danışmanlar (varsayılan):</b> sadece kendi ilan ve portföyünü görür; notları diğer danışmanlara kapalıdır.</li>
+    <li><b class="strong">Özel izin:</b> "İzin ver" ile seçilen danışmana tüm portföyü görme yetkisi verilir.</li>
+    <li><b class="strong">Ayrılan danışman:</b> "Devret" portföyü seçtiğiniz kişiye aktarır ve hesabı anında kapatır; hiçbir kira takibi kaybolmaz.</li>
+  </ul>
+</div>
+
+<dialog id="addUserModal" class="dlg" aria-label="Yeni danışman">
+  <div class="modal">
+    <div class="modal-h"><h2>{{ m.icon('user-plus') }}Yeni danışman / kullanıcı</h2><button class="x-btn" type="button" data-close aria-label="Kapat">{{ m.icon('x') }}</button></div>
+    <form method="post" action="{{ url_for('team_add') }}">
+      {{ m.csrf_field() }}
+      <label for="new_name">Ad soyad (Sahibinden danışman adıyla aynı) *</label>
+      <input type="text" name="name" id="new_name" placeholder="Örn: Burkay Yıldırım" required autofocus>
+      <div class="form-grid">
+        <div><label for="new_username">Kullanıcı adı *</label><input type="text" name="username" id="new_username" placeholder="burkayy" autocapitalize="off" required></div>
+        <div><label for="new_password">Şifre (en az 8) *</label><input type="password" name="password" id="new_password" autocomplete="new-password" required minlength="8"></div>
+        <div><label for="new_role">Rol</label><select name="role" id="new_role"><option value="agent" selected>Danışman</option><option value="owner">Yönetici (ofis sahibi)</option></select></div>
+        <div><label>&nbsp;</label><label class="check"><input type="checkbox" name="can_see_all" value="1"> Tüm portföyü görebilsin</label></div>
+      </div>
+      <div class="hint">İşaretlenmezse danışman sadece kendi adına kayıtlı ilan ve mülkleri görür.</div>
+      <div class="modal-f"><button type="submit" class="btn ok">{{ m.icon('check') }}Kaydet</button><button type="button" class="btn ghost" data-close>Vazgeç</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="pwdModal" class="dlg" aria-label="Şifre sıfırla">
+  <div class="modal">
+    <div class="modal-h"><h2>{{ m.icon('key') }}Şifre sıfırla</h2><button class="x-btn" type="button" data-close aria-label="Kapat">{{ m.icon('x') }}</button></div>
+    <form method="post" action="" data-fill-form>
+      {{ m.csrf_field() }}
+      <div class="alert gold">Kullanıcı: <b id="pwdModalName">-</b></div>
+      <label for="new_password_input">Yeni şifre (en az 8 karakter) *</label>
+      <input type="password" name="new_password" id="new_password_input" autocomplete="new-password" required minlength="8" autofocus>
+      <div class="modal-f"><button type="submit" class="btn ok">{{ m.icon('check') }}Şifreyi güncelle</button><button type="button" class="btn ghost" data-close>Vazgeç</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="transferModal" class="dlg" aria-label="Portföy devri">
+  <div class="modal">
+    <div class="modal-h"><h2>{{ m.icon('swap') }}Portföyü devret ve hesabı kapat</h2><button class="x-btn" type="button" data-close aria-label="Kapat">{{ m.icon('x') }}</button></div>
+    <form method="post" action="" data-fill-form data-confirm="Portföy devredilip kullanıcı pasife alınsın mı?">
+      {{ m.csrf_field() }}
+      <div class="alert warn"><b id="transferName">-</b> · <span id="transferCount">-</span> devredilecek; kullanıcı pasife alınacak.</div>
+      <label for="to_user">Devralacak kişi</label>
+      <select name="to_user" id="to_user">{% for u in active_users %}<option value="{{ u.id }}" {{ 'selected' if u.id == g.user.id }}>{{ u.name }}</option>{% endfor %}</select>
+      <div class="modal-f"><button type="submit" class="btn">{{ m.icon('swap') }}Devret</button><button type="button" class="btn ghost" data-close>Vazgeç</button></div>
+    </form>
+  </div>
+</dialog>
 {% endblock %}

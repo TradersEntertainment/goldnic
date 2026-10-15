@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Düzenle: {{ p.title }} — {{ brand }}{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div><div class="eyebrow">Mülk #{{ p.id }}</div><h1>Mülk bilgilerini düzenle</h1><div class="sub">Kira tutarı değişirse bu yıl için girilen planlı artış sıfırlanır.</div></div>
+  <div class="actions"><a class="btn ghost" href="{{ url_for('property_view', pid=p.id) }}">{{ m.icon('arrow-left') }}Mülke dön</a></div>
+</div>
+<div class="card" style="max-width:860px">
+  <form method="post">
+    {{ m.csrf_field() }}
+    <div class="form-grid">
+      <div class="full"><label for="e_title">Mülk adı / adres *</label><input id="e_title" name="title" value="{{ f.get('title', p.title) }}" required></div>
+      <div><label for="e_tn">Kiracı</label><input id="e_tn" name="tenant_name" value="{{ f.get('tenant_name', p.tenant_name or '') }}"></div>
+      <div><label for="e_tp">Kiracı telefon</label><input id="e_tp" name="tenant_phone" type="tel" inputmode="tel" value="{{ f.get('tenant_phone', p.tenant_phone or '') }}"></div>
+      <div><label for="e_ln">Ev sahibi</label><input id="e_ln" name="landlord_name" value="{{ f.get('landlord_name', p.landlord_name or '') }}"></div>
+      <div><label for="e_lp">Ev sahibi telefon</label><input id="e_lp" name="landlord_phone" type="tel" inputmode="tel" value="{{ f.get('landlord_phone', p.landlord_phone or '') }}"></div>
+      <div><label for="e_rent">Güncel aylık kira (₺) *</label><input id="e_rent" name="rent" inputmode="decimal" value="{{ f.get('rent', p.rent|plainnum) }}" required></div>
+      <div><label for="e_ren">Sonraki yenileme tarihi *</label><input id="e_ren" type="date" name="renewal_date" value="{{ f.get('renewal_date', p.renewal_date) }}" required></div>
+      <div><label for="e_ls">Sözleşme başlangıç tarihi</label><input id="e_ls" type="date" name="lease_start_date" value="{{ f.get('lease_start_date', p.lease_start_date or '') }}"><div class="hint">Mevcut kiracıyla ilk sözleşmenin tarihi — 5. yıl kira tespiti ve 10. yıl tahliye hakkı bu tarihten hesaplanır.</div></div>
+      <div><label for="e_li">Geçen sene artış (%)</label><input id="e_li" name="last_increase_pct" inputmode="decimal" value="{{ f.get('last_increase_pct', p.last_increase_pct if p.last_increase_pct is not none else '') }}"></div>
+      {% if agents %}
+      <div class="full"><label for="e_agent">Sorumlu danışman</label>
+        <select id="e_agent" name="agent_id">{% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if a.id == p.agent_id }}>{{ a.name }}</option>{% endfor %}</select></div>
+      {% endif %}
+      <div class="full"><label for="e_notes">Not</label><textarea id="e_notes" name="notes" rows="3">{{ f.get('notes', p.notes or '') }}</textarea></div>
+    </div>
+    <div class="row mt16"><button class="btn" type="submit">{{ m.icon('check') }}Kaydet</button><a class="btn ghost" href="{{ url_for('property_view', pid=p.id) }}">Vazgeç</a></div>
+  </form>
+</div>
+{% endblock %}

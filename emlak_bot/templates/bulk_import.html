@@ -1,243 +1,84 @@
 {% extends "base.html" %}
-{% block title %}Toplu Portföy Girişi - {{ brand }}{% endblock %}
-
+{% import "_macros.html" as m with context %}
+{% block title %}Toplu Portföy Girişi — {{ brand }}{% endblock %}
 {% block body %}
-<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px">
-  <div>
-    <h1 style="margin:0">📥 Toplu Portföy & Kira Girişi (100+ Daire)</h1>
-    <p class="mute" style="margin:4px 0 0;font-size:14px">
-      Geçmişten kiraladığınız daireleri, telefon numaralarını ve kira artış tarihlerini tek seferde kolayca sisteme aktarın.
-    </p>
+<div class="page-head">
+  <div><div class="eyebrow">Yönetim</div><h1>Toplu Portföy & Kira Girişi (100+ Daire)</h1>
+    <div class="sub">Geçmişte kiraladığınız daireleri, telefonları ve kira artış tarihlerini tek seferde aktarın. Aynı daire iki kez yapıştırılırsa çiftlenmez.</div></div>
+  <div class="actions"><a href="{{ url_for('download_bulk_template') }}" class="btn ghost">{{ m.icon('download') }}Excel / CSV şablonu</a></div>
+</div>
+
+<div class="kpis">
+  <div class="kpi prime"><div class="k-ic">{{ m.icon('home') }}</div><b class="num">{{ total_props }}</b><span>Kayıtlı kiralık portföy</span></div>
+  <div class="kpi ok"><div class="k-ic">{{ m.icon('bell') }}</div><b>1 ay kala</b><span>İlk otomatik bildirim (30 gün)</span></div>
+  <div class="kpi warn"><div class="k-ic">{{ m.icon('calendar') }}</div><b>Her hafta</b><span>Onaylanmadıkça (23, 16 gün)</span></div>
+  <div class="kpi err"><div class="k-ic">{{ m.icon('alert') }}</div><b>3 günde 1</b><span>Son 2 hafta (14 → 0 gün)</span></div>
+</div>
+
+<div class="alert info">{{ m.icon('lock') }}<div><b>Veri güvenliği:</b> Bu ekran yalnızca ofis sahibine açıktır. Veritabanı Railway sunucusunun iç diskinde (<code>/data/emlak.db</code>) tutulur ve her gece şifrelenerek yedeklenir.</div></div>
+
+<div class="card" data-tabs="hash">
+  <div class="tabs">
+    <button type="button" class="tab active" data-tab="paste">{{ m.icon('file') }}Excel'den yapıştır</button>
+    <button type="button" class="tab" data-tab="file">{{ m.icon('upload') }}CSV dosyası</button>
+    <button type="button" class="tab" data-tab="quick">{{ m.icon('plus') }}Hızlı seri giriş</button>
   </div>
-  <div>
-    <a href="{{ url_for('download_bulk_template') }}" class="btn alt sm" style="font-weight:600;display:inline-flex;align-items:center;gap:6px">
-      📄 Excel / CSV Şablonunu İndir
-    </a>
+
+  <div data-tab-panel="paste">
+    <div class="guide-box">
+      <b>Nasıl?</b> Excel veya Google E-Tablolar'da satırları seçip <kbd>Ctrl</kbd>+<kbd>C</kbd>, aşağıya <kbd>Ctrl</kbd>+<kbd>V</kbd>. Sütunlar otomatik tanınır; ilk satıra başlık yazabilirsiniz.<br>
+      <span class="mute">Önerilen sıra:</span> <code>Daire · Kira · Yenileme Tarihi · Kiracı · Kiracı Tel · Ev Sahibi · Ev Sahibi Tel · Danışman · Notlar</code> — başlıklı tabloda <code>Sözleşme Başlangıç</code> sütunu da tanınır.
+    </div>
+    <form method="post" action="{{ url_for('bulk_import') }}">
+      {{ m.csrf_field() }}<input type="hidden" name="mode" value="paste">
+      <label for="agent_id">Danışmanı belirtilmemiş satırlar kime atansın?</label>
+      <select name="agent_id" id="agent_id" style="max-width:360px">{% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if a.id == g.user.id }}>{{ a.name }}</option>{% endfor %}</select>
+      <label for="paste_data">Excel verisi</label>
+      <textarea name="paste_data" id="paste_data" rows="12" data-tab-focus style="font-family:var(--mono);font-size:13px" placeholder="Yahya Kaptan 3+1 Daire	32000	15.11.2026	Ahmet Yılmaz	05321112233	Mehmet Demir	05423334455	Diren Doğan	1 yıllık sözleşme"></textarea>
+      <label class="check"><input type="checkbox" name="allow_duplicates" value="1"> Mükerrer kontrolünü kapat (aynı daire + kiracı tekrar eklensin)</label>
+      <div class="row mt12"><span class="mute">100+ satırı tek seferde yükleyebilirsiniz.</span><span class="spacer"></span><button type="submit" class="btn ok">{{ m.icon('upload') }}Portföye aktar</button></div>
+    </form>
+  </div>
+
+  <div data-tab-panel="file" hidden>
+    <div class="guide-box">Bilgisayarınızdaki <code>.csv</code> dosyasını seçin (UTF-8 veya Windows-1254 Türkçe kodlama otomatik tanınır). <a href="{{ url_for('download_bulk_template') }}">Örnek şablonu indirin</a>.</div>
+    <form method="post" action="{{ url_for('bulk_import') }}" enctype="multipart/form-data">
+      {{ m.csrf_field() }}<input type="hidden" name="mode" value="file">
+      <label for="agent_id_file">Atanacak danışman</label>
+      <select name="agent_id" id="agent_id_file" style="max-width:360px">{% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if a.id == g.user.id }}>{{ a.name }}</option>{% endfor %}</select>
+      <label for="csv_file">CSV dosyası (.csv / .txt)</label>
+      <input type="file" name="csv_file" id="csv_file" accept=".csv,.txt" required>
+      <button type="submit" class="btn ok mt16">{{ m.icon('upload') }}Dosyayı yükle ve aktar</button>
+    </form>
+  </div>
+
+  <div data-tab-panel="quick" hidden>
+    <p class="mute"><kbd>Tab</kbd> ile alanlar arasında geçin, <kbd>Enter</kbd> ile kaydedip bir sonraki daireye geçin.</p>
+    <form method="post" action="{{ url_for('bulk_import') }}" id="quickAddForm">
+      {{ m.csrf_field() }}<input type="hidden" name="mode" value="quick_add">
+      <div class="form-grid">
+        <div><label for="qa_title">Daire / mülk başlığı *</label><input type="text" name="title" id="qa_title" required data-tab-focus placeholder="Yahya Kaptan 3+1 Daire"></div>
+        <div><label for="qa_rent">Aylık kira (₺) *</label><input type="text" name="rent" id="qa_rent" inputmode="decimal" required placeholder="30000"></div>
+        <div><label for="qa_date">Kira yenileme tarihi *</label><input type="text" name="renewal_date" id="qa_date" required placeholder="15.11.2026"></div>
+        <div><label for="qa_start">Sözleşme başlangıcı</label><input type="text" name="lease_start_date" id="qa_start" placeholder="15.11.2021"></div>
+        <div><label for="qa_tname">Kiracı adı</label><input type="text" name="tenant_name" id="qa_tname"></div>
+        <div><label for="qa_tphone">Kiracı telefonu (WhatsApp)</label><input type="tel" name="tenant_phone" id="qa_tphone" inputmode="tel"></div>
+        <div><label for="qa_lname">Ev sahibi adı</label><input type="text" name="landlord_name" id="qa_lname"></div>
+        <div><label for="qa_lphone">Ev sahibi telefonu</label><input type="tel" name="landlord_phone" id="qa_lphone" inputmode="tel"></div>
+        <div><label for="qa_agent">Danışman</label><select name="agent_id" id="qa_agent">{% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if a.id == g.user.id }}>{{ a.name }}</option>{% endfor %}</select></div>
+        <div><label for="qa_notes">Notlar</label><input type="text" name="notes" id="qa_notes" placeholder="Kira her ayın 5'inde"></div>
+      </div>
+      <button type="submit" class="btn ok mt16">{{ m.icon('check') }}Kaydet ve sıradakine geç</button>
+    </form>
   </div>
 </div>
 
-<!-- GÜVENLİK BİLGİLENDİRME BİLGİ KUTUSU -->
-<div class="card" style="background:#e8f4fd;border:1px solid #b6d3f2;border-radius:10px;padding:14px;margin-bottom:18px">
-  <div style="display:flex;align-items:flex-start;gap:10px">
-    <span style="font-size:24px">🔒</span>
-    <div>
-      <b style="color:#0969da;font-size:14px">Maksimum Veri Güvenliği & Gizlilik Koruması:</b>
-      <p style="margin:4px 0 0;font-size:13px;color:#1c2430;line-height:1.5">
-        Bu ekran ve içe aktarılan kira veritabanı <b>yalnızca Diren Doğan (Yönetici)</b> yetkisine açıktır.
-        Veritabanı Railway sunucusunun iç diskinde (<code style="background:#fff;padding:2px 6px;border-radius:4px;border:1px solid #cfd6df">/data/emlak.db</code>) dış dünyadan ve internetten tamamen izole şekilde korunur.
-        Yetki verilmeyen diğer emlakçılar bu verilere kesinlikle erişemez.
-      </p>
-    </div>
+<div class="card flat">
+  <div class="card-h"><h2>{{ m.icon('file') }}Kabul edilen formatlar</h2></div>
+  <div class="g3">
+    <div><b>Tarih</b><div class="mute">15.11.2026 · 15/11/2026 · 2026-11-15</div></div>
+    <div><b>Tutar</b><div class="mute">30000 · 30.000 · 30.000 TL · 30.000,00 ₺</div></div>
+    <div><b>Telefon</b><div class="mute">05321112233 · 0 532 111 22 33 · +905321112233</div></div>
   </div>
 </div>
-
-<!-- İSTATİSTİK ÖZETİ -->
-<div class="grid" style="margin-bottom:20px">
-  <div class="stat">
-    <b>{{ total_props }}</b>
-    <span>Kayıtlı Kiralık Portföy</span>
-  </div>
-  <div class="stat">
-    <b style="color:var(--ok)">1 Ay Kala</b>
-    <span>İlk Otomatik Bildirim (30 gün)</span>
-  </div>
-  <div class="stat">
-    <b style="color:var(--warn)">Her Hafta</b>
-    <span>Onaylanmadıkça Bildirim (23, 16 gün)</span>
-  </div>
-  <div class="stat">
-    <b style="color:var(--err)">Her 3 Günde 1</b>
-    <span>Son 2 Hafta Takibi (14, 11, 8, 5, 2 gün)</span>
-  </div>
-</div>
-
-<!-- SEKMELER (TABS) -->
-<div style="display:flex;gap:8px;border-bottom:2px solid var(--line);margin-bottom:16px">
-  <button type="button" id="tabBtn1" onclick="switchTab('paste')" class="tab-btn active">
-    📋 1. Excel / Sheets Kopyala-Yapıştır (Önerilen)
-  </button>
-  <button type="button" id="tabBtn2" onclick="switchTab('file')" class="tab-btn">
-    📁 2. CSV Dosyası Yükle
-  </button>
-  <button type="button" id="tabBtn3" onclick="switchTab('quick')" class="tab-btn">
-    ⚡ 3. Hızlı Seri Giriş Formu
-  </button>
-</div>
-
-<style>
-.tab-btn{background:none;border:0;border-bottom:3px solid transparent;padding:10px 16px;font:inherit;font-weight:600;font-size:14px;cursor:pointer;color:var(--mute)}
-.tab-btn.active{color:var(--pri);border-bottom-color:var(--pri)}
-.guide-box{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px}
-</style>
-
-<!-- SEKME 1: EXCEL KOPYALA YAPIŞTIR -->
-<div id="tabPaste" class="card" style="margin-bottom:24px">
-  <h2 style="margin-top:0">📋 Excel veya Google E-Tablolar'dan Kopyala - Yapıştır</h2>
-  <div class="guide-box">
-    <b>Nasıl Yapılır?</b> Excel veya Google Sheets tablonuzdaki satırları fareyle seçip <b>Ctrl+C</b> ile kopyalayın ve aşağıdaki kutucuğa <b>Ctrl+V</b> ile yapıştırın.<br>
-    Sistem sütunları otomatik tanır (sekme/tab boşluklarını otomatik ayıklar).
-    <br><br>
-    <span class="mute">Önerilen Sütun Sırası (veya ilk satıra başlık yazabilirsiniz):</span><br>
-    <code>Daire / Başlık &emsp; Kira &emsp; Yenileme Tarihi &emsp; Kiracı Adı &emsp; Kiracı Tel &emsp; Ev Sahibi &emsp; Ev Sahibi Tel &emsp; Danışman &emsp; Notlar</code>
-  </div>
-
-  <form method="post" action="{{ url_for('bulk_import') }}">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <input type="hidden" name="mode" value="paste">
-
-    <div style="margin-bottom:12px">
-      <label for="agent_id">Portföy Atanacak Danışman (Eğer tabloda danışman belirtilmediyse):</label>
-      <select name="agent_id" id="agent_id" style="max-width:320px">
-        {% for a in agents %}
-        <option value="{{ a.id }}" {% if a.id == g.user.id %}selected{% endif %}>{{ a.name }} ({{ a.role }})</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <label for="paste_data">Excel Verisini Buraya Yapıştırın:</label>
-    <textarea name="paste_data" id="paste_data" rows="12" style="font-family:monospace;font-size:13px" placeholder="Örnek:
-Yahya Kaptan 3+1 Daire	32000	15.11.2024	Ahmet Yılmaz	05321112233	Mehmet Demir	05423334455	Diren Doğan	1 yıllık sözleşme
-İzmit Merkez 2+1	24000	01.12.2024	Ayşe Kaya	05051234567	Ali Veli	05559876543	Diren Doğan	Kira her ayın 1'i
-Kartepe Müstakil Villa	75000	20.01.2025	Can Özkan	05339998877	Hasan Çelik	05301119988	Diren Doğan	Peşin ödendi"></textarea>
-
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;flex-wrap:wrap;gap:10px">
-      <span class="mute" style="font-size:13px">💡 100+ satırı aynı anda yapıştırıp tek seferde yükleyebilirsiniz.</span>
-      <button type="submit" class="btn ok" style="padding:10px 24px;font-weight:700">🚀 Yapıştırılan Verileri Portföye Aktar</button>
-    </div>
-  </form>
-</div>
-
-<!-- SEKME 2: CSV DOSYASI YÜKLE -->
-<div id="tabFile" class="card" style="margin-bottom:24px;display:none">
-  <h2 style="margin-top:0">📁 CSV Dosyası Yükleme</h2>
-  <div class="guide-box">
-    Bilgisayarınızdaki <code>.csv</code> dosyasını seçerek tek seferde yükleyin.
-    Doğru sütun formatı için hazır şablonu indirebilirsiniz:
-    <a href="{{ url_for('download_bulk_template') }}" style="font-weight:600">Örnek Şablonu İndir (.csv)</a>
-  </div>
-
-  <form method="post" action="{{ url_for('bulk_import') }}" enctype="multipart/form-data">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <input type="hidden" name="mode" value="file">
-
-    <div style="margin-bottom:12px">
-      <label for="agent_id_file">Portföy Atanacak Danışman:</label>
-      <select name="agent_id" id="agent_id_file" style="max-width:320px">
-        {% for a in agents %}
-        <option value="{{ a.id }}" {% if a.id == g.user.id %}selected{% endif %}>{{ a.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <label for="csv_file">CSV Dosyası Seçin (.csv veya .txt):</label>
-    <input type="file" name="csv_file" id="csv_file" accept=".csv,.txt" required style="padding:6px">
-
-    <div style="margin-top:14px">
-      <button type="submit" class="btn ok" style="padding:10px 24px;font-weight:700">📁 Dosyayı Yükle ve Aktar</button>
-    </div>
-  </form>
-</div>
-
-<!-- SEKME 3: HIZLI SERİ GİRİŞ FORMU -->
-<div id="tabQuick" class="card" style="margin-bottom:24px;display:none">
-  <h2 style="margin-top:0">⚡ Hızlı Seri Giriş Formu (Tek Tek Seri Ekleme)</h2>
-  <p class="mute" style="font-size:13px;margin-top:0">
-    Klavyeden <b>Tab</b> tuşuyla alanlar arasında hızla geçiş yapabilir, <b>Enter</b> tuşuna basarak hemen kaydedip bir sonraki daireye geçebilirsiniz.
-  </p>
-
-  <form method="post" action="{{ url_for('bulk_import') }}" id="quickAddForm">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <input type="hidden" name="mode" value="quick_add">
-
-    <div class="two">
-      <div>
-        <label for="qa_title">Daire / Mülk Başlığı: *</label>
-        <input type="text" name="title" id="qa_title" required placeholder="Örn: Yahya Kaptan 3+1 Daire" autofocus>
-      </div>
-      <div>
-        <label for="qa_rent">Aylık Kira (TL): *</label>
-        <input type="text" name="rent" id="qa_rent" required placeholder="Örn: 30000">
-      </div>
-    </div>
-
-    <div class="two" style="margin-top:8px">
-      <div>
-        <label for="qa_date">Kira Yenileme / Artış Tarihi: *</label>
-        <input type="text" name="renewal_date" id="qa_date" required placeholder="Örn: 15.11.2024 veya 2024-11-15">
-      </div>
-      <div>
-        <label for="qa_agent">Danışman:</label>
-        <select name="agent_id" id="qa_agent">
-          {% for a in agents %}
-          <option value="{{ a.id }}" {% if a.id == g.user.id %}selected{% endif %}>{{ a.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-
-    <div class="two" style="margin-top:8px">
-      <div>
-        <label for="qa_tname">Kiracı Adı:</label>
-        <input type="text" name="tenant_name" id="qa_tname" placeholder="Örn: Ahmet Yılmaz">
-      </div>
-      <div>
-        <label for="qa_tphone">Kiracı Telefonu (WhatsApp İçin):</label>
-        <input type="tel" name="tenant_phone" id="qa_tphone" placeholder="0532 xxx xx xx">
-      </div>
-    </div>
-
-    <div class="two" style="margin-top:8px">
-      <div>
-        <label for="qa_lname">Ev Sahibi Adı:</label>
-        <input type="text" name="landlord_name" id="qa_lname" placeholder="Örn: Mehmet Demir">
-      </div>
-      <div>
-        <label for="qa_lphone">Ev Sahibi Telefonu:</label>
-        <input type="tel" name="landlord_phone" id="qa_lphone" placeholder="0542 xxx xx xx">
-      </div>
-    </div>
-
-    <div style="margin-top:8px">
-      <label for="qa_notes">Notlar (Opsiyonel):</label>
-      <input type="text" name="notes" id="qa_notes" placeholder="Örn: 1 yıllık kontrat, kira her ayın 5'inde">
-    </div>
-
-    <button type="submit" class="btn ok" style="margin-top:14px;padding:9px 24px;font-weight:700">💾 Daireyi Kaydet (+ Yeni Daireye Geç)</button>
-  </form>
-</div>
-
-<!-- FORMAT DESTEK BİLGİSİ -->
-<div class="card" style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px">
-  <h3 style="margin-top:0;font-size:15px">ℹ️ Kabul Edilen Formatlar & Kolaylıklar</h3>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;font-size:13px">
-    <div>
-      <b>📅 Tarih Formatları:</b><br>
-      <span class="mute">GG.AA.YYYY (15.11.2024)<br>GG/AA/YYYY (15/11/2024)<br>YYYY-AA-GG (2024-11-15)</span>
-    </div>
-    <div>
-      <b>💰 Tutar Formatları:</b><br>
-      <span class="mute">30000, 30.000, 30000 TL, 30.000 TL, 30.000,00 ₺</span>
-    </div>
-    <div>
-      <b>📱 Telefon Formatları:</b><br>
-      <span class="mute">05321112233, 5321112233, 0 532 111 22 33, +905321112233</span>
-    </div>
-  </div>
-</div>
-
-<script>
-function switchTab(mode) {
-  document.getElementById('tabPaste').style.display = mode === 'paste' ? 'block' : 'none';
-  document.getElementById('tabFile').style.display = mode === 'file' ? 'block' : 'none';
-  document.getElementById('tabQuick').style.display = mode === 'quick' ? 'block' : 'none';
-
-  document.getElementById('tabBtn1').classList.toggle('active', mode === 'paste');
-  document.getElementById('tabBtn2').classList.toggle('active', mode === 'file');
-  document.getElementById('tabBtn3').classList.toggle('active', mode === 'quick');
-  
-  if (mode === 'quick') {
-    setTimeout(() => { document.getElementById('qa_title').focus(); }, 100);
-  }
-}
-</script>
 {% endblock %}

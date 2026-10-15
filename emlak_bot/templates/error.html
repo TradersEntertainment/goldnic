@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ title }} — {{ brand }}{% endblock %}
+{% block body %}
+<div class="center-page" style="min-height:60vh">
+  <div class="card gold" style="max-width:480px;width:100%">
+    <div class="big-code gold-text">{{ code }}</div>
+    <h1 class="mt12">{{ title }}</h1>
+    <p class="mute mt8">{{ message }}</p>
+    <div class="row mt16" style="justify-content:center">
+      <a class="btn" href="{{ url_for('dashboard') }}">{{ m.icon('grid') }}Panele dön</a>
+      {% if g.user %}<button class="btn ghost" type="button" data-spotlight>{{ m.icon('search') }}Ara</button>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,64 +1,122 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ 'Ofis paneli' if owner else 'Portföyüm' }} — {{ brand }}{% endblock %}
 {% block body %}
-<h1>{% if owner %}Ofis paneli{% else %}Portföyüm{% endif %}</h1>
-<div class="grid">
-  <div class="stat"><b>{{ stats.total }}</b><span>Mülk</span></div>
-  <div class="stat"><b>{{ stats.soon }}</b><span>30 gün içinde yenileme</span></div>
-  <div class="stat"><b class="{{ 'bad' if stats.overdue else '' }}">{{ stats.overdue }}</b><span>Geciken yenileme</span></div>
-  <div class="stat"><b class="{{ 'warn' if stats.missing else '' }}">{{ stats.missing }}</b><span>Zam oranı girilmemiş</span></div>
-  <div class="stat"><b>{{ stats.rent|money }}</b><span>Aylık toplam kira</span></div>
+<div class="page-head">
+  <div>
+    <div class="eyebrow">{{ greeting }}, {{ g.user.name.split()[0] }} · {{ today|tdate }}</div>
+    <h1>{% if owner %}Ofis paneli{% else %}Portföyüm{% endif %}{% if only_name %} <span class="mute">· {{ only_name }}</span>{% endif %}</h1>
+    <div class="sub">Kira yenilemeleri, görüşmeler ve boş mülkler — hepsi tek bakışta.</div>
+  </div>
+  <div class="actions">
+    <a class="btn ghost" href="{{ url_for('takip') }}">{{ m.icon('radar') }}Takip Merkezi</a>
+    {% if can_view_all %}<a class="btn ghost desktop-only" href="{{ url_for('export_portfolio_csv') }}">{{ m.icon('download') }}Excel</a>{% endif %}
+    <a class="btn" href="{{ url_for('add') }}">{{ m.icon('plus') }}Mülk Ekle</a>
+  </div>
 </div>
 
-{% if owner %}
+<div class="kpis">
+  <a class="kpi prime" href="{{ url_for('dashboard', agent=only if can_view_all else None) }}"><div class="k-ic">{{ m.icon('coins') }}</div><b class="num">{{ stats.rent|money }}</b><span>Aylık toplam kira · {{ stats.total }} mülk</span></a>
+  <a class="kpi {{ 'warn' if stats.soon }}" href="{{ url_for('dashboard', f='soon', agent=only if can_view_all else None) }}"><div class="k-ic">{{ m.icon('calendar') }}</div><b class="num">{{ stats.soon }}</b><span>30 gün içinde yenileme</span></a>
+  <a class="kpi {{ 'err' if stats.overdue else 'ok' }}" href="{{ url_for('dashboard', f='overdue', agent=only if can_view_all else None) }}"><div class="k-ic">{{ m.icon('alert') }}</div><b class="num">{{ stats.overdue }}</b><span>Geciken yenileme</span></a>
+  <a class="kpi {{ 'warn' if stats.uncalled else 'ok' }}" href="{{ url_for('dashboard', f='uncalled', agent=only if can_view_all else None) }}"><div class="k-ic">{{ m.icon('phone') }}</div><b class="num">{{ stats.uncalled }}</b><span>Aranmayı bekleyen</span></a>
+  <a class="kpi {{ 'warn' if stats.missing }}" href="{{ url_for('dashboard', f='missing', agent=only if can_view_all else None) }}"><div class="k-ic">{{ m.icon('percent') }}</div><b class="num">{{ stats.missing }}</b><span>Zam oranı girilmemiş</span></a>
+  <a class="kpi violet" href="#bos-mulkler"><div class="k-ic">{{ m.icon('door') }}</div><b class="num">{{ stats.vacant }}</b><span>Boş mülk (kiracı aranıyor)</span></a>
+</div>
+
+<div class="{{ 'g-side' if owner else '' }}">
+  <div class="card gold">
+    <div class="card-h"><h2>{{ m.icon('radar') }}Bugün odaklanılacaklar</h2><a class="more" href="{{ url_for('takip') }}">Takip Merkezi {{ m.icon('arrow-right', 'sm') }}</a></div>
+    {% if focus %}
+    <div class="list">{% for it in focus %}{{ m.agenda_item(it) }}{% endfor %}</div>
+    {% else %}
+    {{ m.empty('Her şey yolunda', 'Bugün acil bir kira, hukuki süre ya da fırsat bulunmuyor.', 'check') }}
+    {% endif %}
+  </div>
+
+  {% if owner %}
+  <div class="card">
+    <div class="card-h"><h2>{{ m.icon('users') }}Ekip</h2><a class="more" href="{{ url_for('team_view') }}">Yönet {{ m.icon('arrow-right', 'sm') }}</a></div>
+    <div class="list">
+      {% for u in team %}
+      <a class="item" href="{{ url_for('dashboard', agent=u.id) }}">
+        <span class="avatar">{{ u.name|initials }}</span>
+        <div class="i-body"><div class="i-title">{{ u.name }}{% if u.role == 'owner' %} <span class="badge b-gold">{{ m.icon('crown') }}Sahip</span>{% endif %}</div>
+          <div class="i-sub">{{ u.count }} mülk · {{ u.rent|money }} · 30 gün içinde {{ u.soon }} yenileme</div>
+          <div class="i-sub">Son aktif: {{ u.last_active|dt if u.last_active else 'hiç' }}</div></div>
+      </a>
+      {% endfor %}
+    </div>
+    {% if inactive %}<div class="alert warn mt12">{{ m.icon('clock') }}<div><b>{{ inactive|map(attribute='name')|join(', ') }}</b> uzun süredir sistemi kullanmadı.</div></div>{% endif %}
+    {% if only %}<p class="mt12"><a href="{{ url_for('dashboard') }}">{{ m.icon('arrow-left', 'sm') }} Tüm portföy</a></p>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
 <div class="card">
-  <h2>Ekip</h2>
-  <table><tr><th>Emlakçı</th><th>Mülk</th><th>30 gün içinde</th><th>Son aktif</th><th></th></tr>
-  {% for u in team %}<tr>
-    <td>{{ u.name }}{% if u.role == 'owner' %} <span class="mute">(sahip)</span>{% endif %}</td>
-    <td>{{ u.count }}</td><td>{{ u.soon }}</td>
-    <td>{{ (u.last_active or '')[:16].replace('T',' ') or 'hiç' }}</td>
-    <td><a href="{{ url_for('dashboard', agent=u.id) }}">Portföyü gör</a></td></tr>{% endfor %}
+  <div class="card-h">
+    <h2>{{ m.icon('home') }}Portföy</h2>
+    <div class="scroll-x">
+      {% set aq = only if can_view_all else None %}
+      <a class="chip {{ 'on' if flt == 'all' }}" href="{{ url_for('dashboard', agent=aq) }}">Tümü <span class="n">{{ all_count }}</span></a>
+      <a class="chip {{ 'on' if flt == 'soon' }}" href="{{ url_for('dashboard', f='soon', agent=aq) }}">30 gün <span class="n">{{ stats.soon }}</span></a>
+      <a class="chip {{ 'on' if flt == 'overdue' }}" href="{{ url_for('dashboard', f='overdue', agent=aq) }}">Geciken <span class="n">{{ stats.overdue }}</span></a>
+      <a class="chip {{ 'on' if flt == 'uncalled' }}" href="{{ url_for('dashboard', f='uncalled', agent=aq) }}">Aranmadı <span class="n">{{ stats.uncalled }}</span></a>
+      <a class="chip {{ 'on' if flt == 'missing' }}" href="{{ url_for('dashboard', f='missing', agent=aq) }}">Zam yok <span class="n">{{ stats.missing }}</span></a>
+    </div>
+  </div>
+  {% if not rows %}
+    {% call m.empty('Kayıt yok', 'Bu filtreye uyan mülk bulunmuyor.', 'home') %}<a class="btn ghost sm" href="{{ url_for('add') }}">{{ m.icon('plus') }}Mülk ekle</a>{% endcall %}
+  {% else %}
+  <input class="mb16" type="search" placeholder="Bu listede ara: daire, kiracı, telefon…" data-filter="#portfolioTable" aria-label="Portföyde ara">
+  <div class="table-wrap">
+  <table class="rt" id="portfolioTable">
+    <thead><tr><th>Mülk</th>{% if owner %}<th>Emlakçı</th>{% endif %}<th>Kiracı</th><th>Kira</th><th>Yenileme</th><th>Geçen yıl</th><th>Bu yıl</th><th>Takip</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr data-search="{{ r.title }} {{ r.tenant_name or '' }} {{ r.tenant_phone or '' }} {{ r.landlord_name or '' }} {{ r.agent }}">
+      <td class="rt-main col-wide"><a class="t-title" href="{{ url_for('property_view', pid=r.id) }}">{{ r.title }}</a><span class="t-sub">#{{ r.id }}{% if r.landlord_name %} · Ev sahibi: {{ r.landlord_name }}{% endif %}</span></td>
+      {% if owner %}<td data-label="Emlakçı">{{ r.agent }}</td>{% endif %}
+      <td data-label="Kiracı">{{ r.tenant_name or '-' }}{% if r.tenant_phone %}<span class="t-sub nowrap">{{ r.tenant_phone|phone }}</span>{% endif %}</td>
+      <td data-label="Kira" class="num strong">{{ r.rent|money }}</td>
+      <td data-label="Yenileme"><span class="num">{{ r.renewal_date|tdate }}</span><br>{{ m.days_badge(r.days) }}</td>
+      <td data-label="Geçen yıl" class="num">{{ r.last_increase_pct|pct }}</td>
+      <td data-label="Bu yıl">{% if r.planned_rent %}<span class="num">{{ r.planned_pct|pct }}</span><span class="t-sub num">{{ r.planned_rent|money }}</span>{% elif r.days <= 30 %}<span class="badge b-warn">girilmedi</span>{% else %}-{% endif %}</td>
+      <td class="rt-actions">
+        {% if r.is_acked %}
+          <span class="badge b-ok" title="Bu dönem için müşteri arandı ve takip kapatıldı">{{ m.icon('check') }}Arandı</span>
+        {% elif r.days <= 30 %}
+          <div class="row nowrap">
+            {% if r.wa_url %}<a href="{{ r.wa_url }}" target="_blank" rel="noopener" class="btn xs wa" title="Kiracıya WhatsApp mesajı gönder">{{ m.icon('chat') }}WA</a>{% endif %}
+            <form method="post" action="{{ url_for('property_aradim', pid=r.id) }}">
+              {{ m.csrf_field() }}<input type="hidden" name="next" value="{{ request.full_path }}">
+              <button type="submit" class="btn xs ok" title="Müşteriyi aradım, bildirimleri kapat">{{ m.icon('phone') }}Aradım</button>
+            </form>
+          </div>
+        {% else %}
+          <span class="mute">Takipte</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
   </table>
-  {% for u in inactive %}<p class="warn">😴 {{ u.name }} uzun süredir sistemi kullanmadı.</p>{% endfor %}
-  {% if only %}<p><a href="{{ url_for('dashboard') }}">← Tüm portföy</a></p>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% if vacant %}
+<div class="card" id="bos-mulkler">
+  <div class="card-h"><h2>{{ m.icon('door') }}Boş mülkler — kiracı aranıyor</h2><span class="badge b-violet">{{ vacant|length }}</span></div>
+  <div class="list">
+    {% for p in vacant %}
+    <a class="item info" href="{{ url_for('property_view', pid=p.id) }}">
+      <div class="i-ic">{{ m.icon('door') }}</div>
+      <div class="i-body"><div class="i-title">{{ p.title }}</div><div class="i-sub">Son kira {{ p.rent|money }}{% if p.exit_date %} · Çıkış {{ p.exit_date|tdate }}{% endif %}{% if owner %} · {{ p.agent }}{% endif %}</div></div>
+      <div class="i-side">{{ m.icon('arrow-right') }}</div>
+    </a>
+    {% endfor %}
+  </div>
 </div>
 {% endif %}
-
-<div class="card">
-  <h2>Portföy</h2>
-  {% if not rows %}<p class="mute">Kayıt yok.</p>{% else %}
-  <table><tr><th>#</th><th>Mülk</th>{% if owner %}<th>Emlakçı</th>{% endif %}<th>Kiracı</th><th>Kira</th><th>Yenileme</th><th>Geçen yıl</th><th>Bu yıl</th><th>İletişim / Takip</th></tr>
-  {% for r in rows %}<tr>
-    <td>{{ r.id }}</td><td><a href="{{ url_for('property_view', pid=r.id) }}"><b>{{ r.title }}</b></a></td>
-    {% if owner %}<td>{{ r.agent }}</td>{% endif %}
-    <td>
-      {{ r.tenant_name or '-' }}
-      {% if r.tenant_phone %}<br><small class="mute">{{ r.tenant_phone }}</small>{% endif %}
-    </td>
-    <td>{{ r.rent|money }}</td>
-    <td class="{{ 'bad' if r.days < 0 else ('warn' if r.days <= 30 else '') }}">
-      <b>{{ r.renewal_date|tdate }}</b><br>
-      <small>({{ r.days if r.days >= 0 else (-r.days ~ ' g geçti') }}{{ ' g kaldı' if r.days >= 0 }})</small>
-    </td>
-    <td>{{ r.last_increase_pct|pct }}</td>
-    <td>{% if r.planned_rent %}{{ r.planned_pct|pct }}{% elif r.days <= 30 %}<span class="warn">girilmedi</span>{% else %}-{% endif %}</td>
-    <td>
-      {% if r.is_acked %}
-      <span class="badge badge-acked" title="Bu dönem için müşteri arandı ve takip kapatıldı">✓ Arandı</span>
-      {% elif r.days <= 30 %}
-      <div style="display:inline-flex;gap:4px;align-items:center">
-        {% if r.wa_url %}
-        <a href="{{ r.wa_url }}" target="_blank" class="btn-wa" title="Kiracıya WhatsApp mesajı gönder">💬 WA</a>
-        {% endif %}
-        <form method="post" action="{{ url_for('property_aradim', pid=r.id) }}" style="display:inline">
-          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-          <button type="submit" class="btn sm ok" title="Müşteriyi aradım, bildirimleri kapat" style="padding:4px 8px;font-size:12px">📞 Aradım</button>
-        </form>
-      </div>
-      {% else %}
-      <span class="mute" style="font-size:12px">Takipte</span>
-      {% endif %}
-    </td>
-  </tr>{% endfor %}</table>{% endif %}
-</div>
 {% endblock %}

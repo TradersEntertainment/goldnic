@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Takip Merkezi — {{ brand }}{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div><div class="eyebrow">Sıfır olay kaçırma</div><h1>Takip Merkezi</h1>
+    <div class="sub">Kira yenilemeleri, hukuki süreler, müşteri eşleşmeleri ve sistem uyarıları — önceliğe göre tek listede.</div></div>
+</div>
+
+<div class="kpis">
+  <a class="kpi {{ 'err' if counts.critical else 'ok' }}" href="{{ url_for('takip') }}"><div class="k-ic">{{ m.icon('alert') }}</div><b class="num">{{ counts.critical }}</b><span>Kritik (bugün)</span></a>
+  <a class="kpi {{ 'warn' if counts.warning }}" href="{{ url_for('takip') }}"><div class="k-ic">{{ m.icon('clock') }}</div><b class="num">{{ counts.warning }}</b><span>Yaklaşan</span></a>
+  <a class="kpi prime" href="{{ url_for('takip') }}"><div class="k-ic">{{ m.icon('sparkles') }}</div><b class="num">{{ counts.match }}</b><span>Fırsat / eşleşme</span></a>
+  <a class="kpi info" href="{{ url_for('takip') }}"><div class="k-ic">{{ m.icon('bell') }}</div><b class="num">{{ counts.info }}</b><span>Bilgi</span></a>
+</div>
+
+{% set kind_labels = {'renewal': 'Kira yenileme', 'legal': 'Hukuki radar', 'match': 'Müşteri eşleşmesi', 'vacant': 'Boş mülk', 'system': 'Sistem'} %}
+<div class="scroll-x mb16">
+  <a class="chip {{ 'on' if not kind }}" href="{{ url_for('takip') }}">Tümü <span class="n">{{ total }}</span></a>
+  {% for k, n in kinds.items() %}<a class="chip {{ 'on' if kind == k }}" href="{{ url_for('takip', tur=k) }}">{{ kind_labels.get(k, k) }} <span class="n">{{ n }}</span></a>{% endfor %}
+</div>
+
+{% if not sections %}
+<div class="card">{{ m.empty('Her şey kontrol altında', 'Bugün ilgilenilmesi gereken bir kira, hukuki süre veya fırsat yok.', 'check') }}</div>
+{% endif %}
+{% for sev, label, group in sections %}
+<div class="section-title">{{ label }} · {{ group|length }}</div>
+<div class="list">{% for it in group %}{{ m.agenda_item(it) }}{% endfor %}</div>
+{% endfor %}
+{% endblock %}

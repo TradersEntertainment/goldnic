@@ -1,14 +1,53 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Hesabım — {{ brand }}{% endblock %}
 {% block body %}
-<div class="card" style="max-width:460px">
-  <h1>Hesabım</h1>
-  <p>Kullanıcı adı: <b>{{ g.user.username }}</b></p>
-  <form method="post">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <label>Mevcut şifre</label><input type="password" name="old" autocomplete="current-password" required>
-    <label>Yeni şifre (en az 8 karakter)</label><input type="password" name="new" autocomplete="new-password" required>
-    <label>Yeni şifre (tekrar)</label><input type="password" name="new2" autocomplete="new-password" required>
-    <button class="btn">Şifreyi değiştir</button>
-  </form>
+<div class="page-head">
+  <div><div class="eyebrow">Hesap</div><h1>Hesabım</h1><div class="sub">Profil, şifre ve mobil uygulama ayarları.</div></div>
+</div>
+<div class="g2">
+  <div>
+    <div class="card gold">
+      <div class="row"><span class="avatar" style="width:56px;height:56px;font-size:20px">{{ g.user.name|initials }}</span>
+        <div><h2>{{ g.user.name }}</h2><div class="mute">@{{ g.user.username }} · {{ 'Ofis Sahibi' if g.user.role == 'owner' else 'Danışman' }}{% if g.user.can_see_all and g.user.role != 'owner' %} · tüm portföyü görür{% endif %}</div></div></div>
+      <div class="hero-stats">
+        <div class="hero-stat"><span>Portföyüm</span><b>{{ my_count }} mülk</b></div>
+        <div class="hero-stat"><span>Üyelik</span><b>{{ g.user.created_at|tdate if g.user.created_at else '-' }}</b></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('key') }}Şifre değiştir</h2></div>
+      <form method="post">
+        {{ m.csrf_field() }}
+        <label for="old">Mevcut şifre</label><input id="old" type="password" name="old" autocomplete="current-password" required>
+        <label for="new">Yeni şifre (en az 8 karakter)</label><input id="new" type="password" name="new" autocomplete="new-password" required minlength="8">
+        <label for="new2">Yeni şifre (tekrar)</label><input id="new2" type="password" name="new2" autocomplete="new-password" required minlength="8">
+        <button class="btn mt16" type="submit">{{ m.icon('check') }}Şifreyi değiştir</button>
+      </form>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('device') }}Mobil uygulama (PWA)</h2></div>
+      <p class="mute">{{ brand }} OS telefonunuzda adres çubuğu olmayan, tam ekran bir uygulama gibi çalışır.</p>
+      <ul class="mute" style="padding-left:18px">
+        <li><b class="strong">iPhone:</b> Safari → Paylaş → <b>Ana Ekrana Ekle</b></li>
+        <li><b class="strong">Android:</b> Chrome menüsü → <b>Uygulamayı yükle</b></li>
+        <li><b class="strong">Masaüstü:</b> <kbd data-kbd>Ctrl K</kbd> ile her yerden arama</li>
+      </ul>
+      <button class="btn ghost" type="button" data-install hidden>{{ m.icon('device') }}Bu cihaza yükle</button>
+    </div>
+    {% if recent %}
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('activity') }}Son işlemlerim</h2></div>
+      <div class="list">
+        {% for r in recent %}{% set lab = action_labels.get(r.action, (r.action, 'activity', None)) %}
+        <div class="item"><div class="i-ic">{{ m.icon(lab[1]) }}</div><div class="i-body"><div class="i-title">{{ lab[0] }}</div><div class="i-sub">{{ r.ts|dt }}{% if r.detail %} · {{ r.detail }}{% endif %}</div></div></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    <form method="post" action="{{ url_for('logout') }}">{{ m.csrf_field() }}<button class="btn danger block" type="submit">{{ m.icon('logout') }}Çıkış yap</button></form>
+  </div>
 </div>
 {% endblock %}

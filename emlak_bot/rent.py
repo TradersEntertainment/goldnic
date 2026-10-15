@@ -21,8 +21,9 @@ def parse_date(text: str) -> date:
 
 
 def fmt_date(d: date | str) -> str:
+    """date, datetime veya ISO metni (saatli olabilir) -> GG.AA.YYYY."""
     if isinstance(d, str):
-        d = date.fromisoformat(d)
+        d = date.fromisoformat(d[:10])
     return d.strftime("%d.%m.%Y")
 
 

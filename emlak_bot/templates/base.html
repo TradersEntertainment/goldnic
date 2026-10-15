@@ -1,84 +1,123 @@
-<!doctype html>
+{% import "_macros.html" as m with context %}<!doctype html>
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#070B14">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="{{ brand }}">
+<meta name="application-name" content="{{ brand }} OS">
+<meta name="format-detection" content="telephone=no">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>{% block title %}{{ brand }}{% endblock %}</title>
-<style>
-:root{--bg:#f4f6f9;--card:#fff;--ink:#1c2430;--mute:#6b7685;--pri:#1f6feb;--ok:#1a7f37;--warn:#b7791f;--err:#cf222e;--line:#e3e8ef}
-*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
-header{background:#14213d;color:#fff;padding:10px 20px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
-header a{color:#fff;text-decoration:none;opacity:.85;font-weight:500;font-size:14px}header a:hover{opacity:1}header .sp{flex:1}
-header form{display:inline}header button{background:none;border:1px solid #ffffff55;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer}
-main{max-width:1150px;margin:20px auto;padding:0 14px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px;overflow-x:auto}
-h1{font-size:22px;margin:0 0 12px}h2{font-size:17px;margin:0 0 10px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}.stat b{display:block;font-size:22px}.stat span{color:var(--mute);font-size:13px}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);font-size:14px;white-space:nowrap}th{color:var(--mute);font-weight:600}
-a{color:var(--pri)}.bad{color:var(--err);font-weight:600}.warn{color:var(--warn);font-weight:600}.good{color:var(--ok)}.mute{color:var(--mute)}
-label{display:block;margin:10px 0 3px;font-weight:600;font-size:13px}
-input,textarea,select{width:100%;padding:9px;border:1px solid #cfd6df;border-radius:7px;font:inherit;background:#fff}
-.btn{display:inline-block;background:var(--pri);color:#fff;border:0;border-radius:7px;padding:9px 16px;font:inherit;font-size:14px;cursor:pointer;margin-top:12px;text-decoration:none;text-align:center}
-.btn.sm{padding:5px 10px;font-size:13px;margin:0}
-.btn.alt{background:#fff;color:var(--ink);border:1px solid #cfd6df}.btn.danger{background:var(--err)}
-.btn.ok{background:var(--ok)}
-.flash{padding:10px 14px;border-radius:8px;margin-bottom:12px}.flash.ok{background:#dafbe1;color:#0a3d18}.flash.err{background:#ffebe9;color:#82071e}
-.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:700px){.two{grid-template-columns:1fr}}
-.kv{display:grid;grid-template-columns:150px 1fr;gap:6px 10px}.kv div:nth-child(odd){color:var(--mute)}
-.login{max-width:360px;margin:12vh auto}
-
-/* İlan kartları ve rozetler */
-.badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 8px;border-radius:12px;text-transform:uppercase;letter-spacing:0.5px}
-.badge-kiralik{background:#e1f0ff;color:#0969da;border:1px solid #b6d3f2}
-.badge-satilik{background:#fff8e1;color:#9a6700;border:1px solid #f2e0a6}
-.badge-renew{background:#dafbe1;color:#1a7f37;border:1px solid #aceebb}
-.badge-agent{background:#f0f3f6;color:#24292f;border:1px solid #d0d7de}
-.badge-active{background:#2da44e;color:#fff}
-.cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px;margin-top:16px}
-.lcard{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;transition:transform .15s ease,box-shadow .15s ease}
-.lcard:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,0.08)}
-.lcard-thumb{position:relative;width:100%;height:180px;background:#1a2332;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.lcard-thumb img{width:100%;height:100%;object-fit:cover}
-.lcard-thumb .no-img{color:#8c959f;font-size:13px}
-.lcard-badges{position:absolute;top:8px;left:8px;display:flex;gap:6px;flex-wrap:wrap;z-index:2}
-.lcard-body{padding:14px;flex:1;display:flex;flex-direction:column}
-.lcard-price{font-size:20px;font-weight:800;color:#14213d;margin-bottom:6px}
-.lcard-title{font-size:14px;font-weight:600;line-height:1.4;margin:0 0 8px;color:#1c2430;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;height:40px}
-.lcard-meta{font-size:12px;color:var(--mute);margin-bottom:12px;display:flex;justify-content:space-between}
-.lcard-consultant{background:#f8fafc;border-top:1px solid var(--line);padding:10px 14px;font-size:12px;display:flex;align-items:center;justify-content:space-between}
-.lcard-actions{padding:10px 14px;background:#fff;border-top:1px solid var(--line);display:flex;gap:8px}
-
-/* Modal */
-.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center}
-.modal-overlay.active{display:flex}
-/* WhatsApp ve Aksiyon Butonları */
-.btn-wa{background:#25d366;color:#fff !important;border:0;border-radius:7px;display:inline-flex;align-items:center;gap:6px;font-weight:600;text-decoration:none;padding:5px 12px;font-size:13px}
-.btn-wa:hover{background:#20bd5a;color:#fff !important}
-.badge-acked{background:#e6fcf5;color:#0ca678;border:1px solid #96f2d7;font-weight:700}
-</style>
+<link rel="manifest" href="{{ url_for('manifest') }}">
+<link rel="icon" type="image/svg+xml" href="{{ asset('icons/icon.svg') }}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ asset('icons/favicon-32.png') }}">
+<link rel="apple-touch-icon" href="{{ asset('icons/apple-touch-icon.png') }}">
+<link rel="stylesheet" href="{{ asset('app.css') }}">
+<script src="{{ asset('app.js') }}" defer></script>
 </head>
-<body>
+<body class="{{ 'app' if g.user else 'bare' }}">
+{% include "_icons.html" %}
 {% if g.user %}
-<header>
-  <strong>🏢 {{ brand }}</strong>
-  <a href="{{ url_for('dashboard') }}">Kira Takibi</a>
-  <a href="{{ url_for('listings_view') }}">İlan Portföyü</a>
-  <a href="{{ url_for('add') }}">+ Mülk Ekle</a>
-  {% if g.user.role == 'owner' %}
-  <a href="{{ url_for('bulk_import') }}">📥 Toplu Giriş</a>
-  <a href="{{ url_for('team_view') }}">Ekip Yönetimi</a>
-  <a href="{{ url_for('activity') }}">Aktivite</a>
-  {% endif %}
-  <span class="sp"></span>
-  <a href="{{ url_for('account') }}">{{ g.user.name }}</a>
-  <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button>Çıkış</button></form>
-</header>
+{% set is_owner = g.user.role == 'owner' %}
+<div class="shell">
+  <aside class="sidebar" aria-label="Ana menü">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <img src="{{ asset('icons/icon.svg') }}" alt="" width="38" height="38">
+      <span><b>{{ brand }}</b><small>Real Estate OS</small></span>
+    </a>
+    <button class="spot-trigger" type="button" data-spotlight aria-label="Hızlı arama">
+      {{ m.icon('search') }}<span>Ara…</span><kbd data-kbd>Ctrl K</kbd>
+    </button>
+    <nav class="side-nav">
+      <div class="nav-label">Ofis</div>
+      {{ m.navlink('dashboard', 'grid', 'Panel') }}
+      {{ m.navlink('takip', 'radar', 'Takip Merkezi', count=nav.alerts) }}
+      {{ m.navlink('listings_view', 'building', 'İlan Portföyü') }}
+      {% for item in nav.extra %}{{ m.navlink(item.endpoint, item.icon, item.label, endpoints=item.endpoints, count=item.count, count_cls=item.count_cls) }}{% endfor %}
+      {{ m.navlink('add', 'plus', 'Mülk Ekle') }}
+      {% if is_owner %}
+      <div class="nav-label">Yönetim</div>
+      {% for item in nav.owner_extra %}{{ m.navlink(item.endpoint, item.icon, item.label, endpoints=item.endpoints, count=item.count, count_cls=item.count_cls) }}{% endfor %}
+      {{ m.navlink('bulk_import', 'upload', 'Toplu Giriş') }}
+      {{ m.navlink('team_view', 'users', 'Ekip') }}
+      {{ m.navlink('activity', 'activity', 'Aktivite') }}
+      {% endif %}
+    </nav>
+    <div class="side-foot">
+      <a class="me" href="{{ url_for('account') }}">
+        <span class="avatar">{{ g.user.name|initials }}</span>
+        <span><b>{{ g.user.name }}</b><small>{{ 'Ofis Sahibi' if is_owner else 'Danışman' }}</small></span>
+      </a>
+      <form method="post" action="{{ url_for('logout') }}">{{ m.csrf_field() }}<button class="btn ghost sm" type="submit">{{ m.icon('logout') }}Çıkış</button></form>
+    </div>
+  </aside>
+
+  <header class="appbar">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <img src="{{ asset('icons/icon.svg') }}" alt="" width="32" height="32">
+      <span><b>{{ brand }}</b><small>Real Estate OS</small></span>
+    </a>
+    <button class="icon-btn" type="button" data-spotlight aria-label="Ara">{{ m.icon('search', 'lg') }}</button>
+    <a href="{{ url_for('account') }}" class="avatar" aria-label="Hesabım">{{ g.user.name|initials }}</a>
+  </header>
+
+  <main class="main" id="main">
+{% else %}
+  <main class="main bare" id="main">
 {% endif %}
-<main>
-{% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}{% endwith %}
-{% block body %}{% endblock %}
-</main>
+    {% block flashes %}{% include "_flashes.html" %}{% endblock %}
+    {% block body %}{% endblock %}
+  </main>
+{% if g.user %}
+</div>
+
+<nav class="bottomnav" aria-label="Alt menü">
+  <a href="{{ url_for('dashboard') }}" class="{{ 'on' if request.endpoint == 'dashboard' }}">{{ m.icon('grid') }}<span>Panel</span></a>
+  <a href="{{ url_for('listings_view') }}" class="{{ 'on' if request.endpoint == 'listings_view' }}">{{ m.icon('building') }}<span>İlanlar</span></a>
+  <div class="fab-wrap"><button class="fab" type="button" data-open="quickAdd" aria-label="Hızlı ekle">{{ m.icon('plus') }}</button></div>
+  <a href="{{ url_for('takip') }}" class="{{ 'on' if request.endpoint in ('takip',) + nav.takip_endpoints }}">{{ m.icon('radar') }}<span>Takip</span>{% if nav.alerts %}<i class="dot">{{ nav.alerts }}</i>{% endif %}</a>
+  {% if is_owner %}
+  <a href="{{ url_for('team_view') }}" class="{{ 'on' if request.endpoint in ('team_view', 'activity', 'bulk_import') + nav.owner_endpoints }}">{{ m.icon('users') }}<span>Ekip</span></a>
+  {% elif nav.agent_last %}
+  <a href="{{ url_for(nav.agent_last.endpoint) }}" class="{{ 'on' if request.endpoint in nav.agent_last.endpoints }}">{{ m.icon(nav.agent_last.icon) }}<span>{{ nav.agent_last.short }}</span></a>
+  {% else %}
+  <a href="{{ url_for('account') }}" class="{{ 'on' if request.endpoint == 'account' }}">{{ m.icon('user') }}<span>Hesap</span></a>
+  {% endif %}
+</nav>
+
+<dialog class="sheet" id="quickAdd" aria-label="Hızlı ekle">
+  <div class="modal">
+    <div class="sheet-handle mobile-only"></div>
+    <div class="modal-h"><h2>{{ m.icon('plus') }}Hızlı Ekle</h2><button class="x-btn" type="button" data-close aria-label="Kapat">{{ m.icon('x') }}</button></div>
+    <div class="tiles">
+      <a class="tile" href="{{ url_for('add') }}">{{ m.icon('home') }}<b>Mülk / Kiracı</b><small>Kira takibine yeni kayıt ekle</small></a>
+      {% for t in nav.quick %}<a class="tile" href="{{ t.url }}">{{ m.icon(t.icon) }}<b>{{ t.label }}</b><small>{{ t.hint }}</small></a>{% endfor %}
+      <a class="tile" href="{{ url_for('listings_view') }}">{{ m.icon('refresh') }}<b>İlan Senkronu</b><small>Sahibinden portföyünü güncelle</small></a>
+      {% if is_owner %}<a class="tile" href="{{ url_for('bulk_import') }}">{{ m.icon('upload') }}<b>Toplu Giriş</b><small>Excel'den 100+ daireyi tek seferde aktar</small></a>{% endif %}
+    </div>
+    <button class="btn ghost block" type="button" data-spotlight>{{ m.icon('search') }}Ara (Ctrl K)</button>
+  </div>
+</dialog>
+
+<div class="spot" id="spotlight" hidden role="dialog" aria-modal="true" aria-label="Hızlı arama">
+  <div class="spot-backdrop" data-spot-close></div>
+  <div class="spot-panel">
+    <div class="spot-input">
+      {{ m.icon('search') }}
+      <input id="spotInput" type="search" placeholder="Kiracı, ev sahibi, telefon, daire, ilan veya komut…" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" aria-label="Ara">
+      <button class="x-btn mobile-only" type="button" data-spot-close aria-label="Kapat">{{ m.icon('x') }}</button>
+      <kbd class="desktop-only">Esc</kbd>
+    </div>
+    <div class="spot-results" id="spotResults" role="listbox"></div>
+    <div class="spot-foot"><span><kbd>↑</kbd><kbd>↓</kbd> gezin</span><span><kbd>↵</kbd> aç</span><span><kbd>Esc</kbd> kapat</span></div>
+  </div>
+</div>
+{% endif %}
 </body>
 </html>

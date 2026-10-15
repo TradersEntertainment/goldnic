@@ -1,242 +1,182 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}{{ p.title }} — {{ brand }}{% endblock %}
 {% block body %}
-<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px">
-  <h1 style="margin:0">🏠 {{ p.title }} <span class="mute">#{{ p.id }}</span></h1>
-  <div>
-    {% if p.status == 'vacant' %}
-    <span class="badge" style="background:#fff8e1;color:#9a6700;border:1px solid #f2e0a6;font-size:13px;padding:4px 10px">
-      🚪 BOŞ PORTFÖY (Kiracı Aranıyor)
-    </span>
-    {% else %}
-    <span class="badge badge-active" style="font-size:13px;padding:4px 10px">
-      ✓ AKTİF KİRACI TAKİBİNDE
-    </span>
-    {% endif %}
+<section class="hero">
+  <div class="hero-top">
+    <div>
+      <div class="page-head mb0" style="margin:0"><div class="eyebrow">Mülk #{{ p.id }} · Sorumlu: {{ agent.name if agent else '-' }}</div></div>
+      <h1>{{ m.icon('home', 'xl') }}{{ p.title }} <span class="id">#{{ p.id }}</span></h1>
+      <div class="hero-meta">
+        {% if p.status == 'vacant' %}
+          <span class="badge b-violet">{{ m.icon('door') }}BOŞ PORTFÖY · Kiracı aranıyor</span>
+        {% else %}
+          <span class="badge b-ok">{{ m.icon('check') }}AKTİF KİRACI TAKİBİNDE</span>
+          {{ m.days_badge(days) }}
+          {% if is_acked %}<span class="badge b-ok">{{ m.icon('phone') }}Bu dönem arandı</span>{% endif %}
+        {% endif %}
+        {% if over_cap %}<span class="badge b-err">{{ m.icon('alert') }}Planlanan artış TÜFE tavanını aşıyor</span>{% endif %}
+      </div>
+    </div>
+    <a class="btn ghost sm" href="{{ url_for('dashboard') }}">{{ m.icon('arrow-left') }}Panel</a>
   </div>
-</div>
+  <div class="hero-stats">
+    <div class="hero-stat"><span>Mevcut kira</span><b class="gold-text">{{ p.rent|money }}</b></div>
+    <div class="hero-stat"><span>Yenileme</span><b>{{ p.renewal_date|tdate }}</b></div>
+    <div class="hero-stat"><span>Bu yıl artış</span><b>{% if p.planned_rent %}{{ p.planned_pct|pct }} → {{ p.planned_rent|money }}{% else %}<span class="warn">girilmedi</span>{% endif %}</b></div>
+    <div class="hero-stat"><span>Geçen yıl artış</span><b>{{ p.last_increase_pct|pct }}</b></div>
+    {% if tufe is not none %}<div class="hero-stat"><span>TÜFE tavanı ({{ tufe|pct }})</span><b>{{ cap|money }}</b></div>{% endif %}
+  </div>
+  <div class="hero-actions">
+    {% if wa_tenant_url %}<a href="{{ wa_tenant_url }}" target="_blank" rel="noopener" class="btn wa">{{ m.icon('chat') }}Kiracıya WhatsApp</a>{% endif %}
+    {% if wa_landlord_url %}<a href="{{ wa_landlord_url }}" target="_blank" rel="noopener" class="btn wa">{{ m.icon('chat') }}Ev sahibine WhatsApp</a>{% endif %}
+    {% if p.tenant_phone %}<a class="btn ghost" href="tel:{{ p.tenant_phone }}">{{ m.icon('phone') }}Kiracıyı ara</a>{% endif %}
+    {% if p.landlord_phone %}<a class="btn ghost" href="tel:{{ p.landlord_phone }}">{{ m.icon('phone') }}Ev sahibini ara</a>{% endif %}
+    <a class="btn ghost" href="{{ url_for('property_edit', pid=p.id) }}">{{ m.icon('edit') }}Düzenle</a>
+    {% if agents %}<button class="btn ghost" type="button" data-open="transferModal">{{ m.icon('swap') }}Devret</button>{% endif %}
+  </div>
+</section>
 
 {% if p.status == 'vacant' %}
-<div class="card" style="background:#fff8e1;border:1px solid #f2e0a6;margin-bottom:16px">
-  <h2 style="color:#9a6700;margin:0 0 8px">🚪 Bu Mülk Şu Anda Boş (Kiracı Çıktı)</h2>
-  <div style="font-size:13px;display:grid;grid-template-columns:160px 1fr;gap:6px 12px">
-    <div style="color:var(--mute)">Tahliye Tarihi:</div><div><b>{{ p.exit_date or 'Belirtilmedi' }}</b></div>
-    <div style="color:var(--mute)">Depozito / Mahsup:</div><div>{{ p.deposit_notes or 'Kayıt girilmedi' }}</div>
-    <div style="color:var(--mute)">Anahtar & Mülk Durumu:</div><div>{{ p.handover_notes or 'Kayıt girilmedi' }}</div>
+<div class="card gold" id="yeni-kiraci">
+  <div class="card-h"><h2>{{ m.icon('user-plus') }}Yeni kiracı girişi</h2><span class="badge b-violet">Boş: {{ p.exit_date|tdate if p.exit_date else 'tarih yok' }}</span></div>
+  <div class="kv mb16">
+    <div>Depozito / mahsup</div><div>{{ p.deposit_notes or 'Kayıt girilmedi' }}</div>
+    <div>Anahtar & mülk durumu</div><div>{{ p.handover_notes or 'Kayıt girilmedi' }}</div>
   </div>
-</div>
-
-<!-- Yeni Kiracı Giriş Kartı -->
-<div class="card" style="border:2px solid var(--pri);margin-bottom:20px">
-  <h2>➕ Yeni Kiracı Girişi Yap</h2>
-  <p class="mute" style="font-size:13px;margin-top:0">
-    Bu mülk yeni bir kiracıya verildiğinde bilgileri girerek kira artış takvimini otomatik başlatabilirsiniz:
-  </p>
   <form method="post" action="{{ url_for('property_new_tenant', pid=p.id) }}">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-
-    <div class="two">
-      <div>
-        <label for="nt_name">Yeni Kiracı Adı Soyadı: *</label>
-        <input type="text" name="tenant_name" id="nt_name" required placeholder="Örn: Mehmet Öz">
-      </div>
-      <div>
-        <label for="nt_phone">Yeni Kiracı Telefonu:</label>
-        <input type="tel" name="tenant_phone" id="nt_phone" placeholder="0 5xx xxx xx xx">
-      </div>
+    {{ m.csrf_field() }}
+    <div class="form-grid">
+      <div><label for="nt_name">Yeni kiracı adı soyadı *</label><input type="text" name="tenant_name" id="nt_name" required placeholder="Örn: Mehmet Öz"></div>
+      <div><label for="nt_phone">Yeni kiracı telefonu</label><input type="tel" name="tenant_phone" id="nt_phone" placeholder="0 5xx xxx xx xx" inputmode="tel"></div>
+      <div><label for="nt_rent">Yeni aylık kira (₺) *</label><input name="rent" id="nt_rent" value="{{ p.rent|plainnum }}" required inputmode="decimal"></div>
+      <div><label for="nt_start">Kira başlangıç tarihi *</label><input type="date" name="start_date" id="nt_start" required data-default="today"></div>
+      <div class="full"><label for="nt_renewal">Kira artış (yenileme) tarihi *</label><input type="date" name="renewal_date" id="nt_renewal" required data-default="next-year" data-plus-year-from="#nt_start"><div class="hint">Sistem bu tarihten 30 gün önce danışmana ve ofise otomatik hatırlatma gönderir.</div></div>
+      <div class="full"><label for="nt_notes">Notlar (depozito, taahhüt vb.)</label><textarea name="notes" id="nt_notes" rows="2" placeholder="Örn: 2 kira depozito alındı. Boyalı teslim edildi."></textarea></div>
     </div>
-
-    <div class="two" style="margin-top:8px">
-      <div>
-        <label for="nt_rent">Yeni Aylık Kira (TL): *</label>
-        <input type="number" step="any" name="rent" id="nt_rent" value="{{ p.rent|int }}" required>
-      </div>
-      <div>
-        <label for="nt_start">Kira Başlangıç Tarihi: *</label>
-        <input type="date" name="start_date" id="nt_start" required>
-      </div>
-    </div>
-
-    <div style="background:#f0f8ff;border:1px solid #b6d3f2;border-radius:8px;padding:10px;margin-top:10px">
-      <label for="nt_renewal" style="margin-top:0;color:#0969da">📅 Yeni Senesi Ne Zaman Dolacak? (Kira Artış Tarihi): *</label>
-      <input type="date" name="renewal_date" id="nt_renewal" required>
-    </div>
-
-    <label for="nt_notes">Ekstra Notlar (Depozito, taahhüt vb.):</label>
-    <textarea name="notes" id="nt_notes" rows="2" placeholder="Örn: 2 kira depozito alındı. Boyalı teslim edildi."></textarea>
-
-    <button type="submit" class="btn ok" style="margin-top:12px">Yeni Kiracıyı Başlat ve Takibe Al</button>
+    <button type="submit" class="btn ok mt16">{{ m.icon('check') }}Yeni kiracıyı başlat ve takibe al</button>
   </form>
 </div>
 {% endif %}
-<!-- MÜŞTERİ TAKİP VE WHATSAPP KARTI -->
-<div class="card" style="margin-bottom:16px;border-left:5px solid {% if is_acked %}#0ca678{% elif days <= 30 %}#f08c00{% else %}var(--pri){% endif %}">
-  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
-    <h2 style="margin:0;display:flex;align-items:center;gap:8px">
-      📱 İletişim & WhatsApp Takibi
+
+<div class="g-side">
+  <div>
+    {% if p.status == 'active' %}
+    <div class="card" style="border-left:3px solid {% if is_acked %}var(--ok){% elif days <= 30 %}var(--warn){% else %}var(--gold){% endif %}">
+      <div class="card-h">
+        <h2>{{ m.icon('phone') }}İletişim & görüşme takibi</h2>
+        {% if is_acked %}<span class="badge b-ok">{{ m.icon('check') }}Müşteri arandı (takip bitti)</span>
+        {% elif days <= 30 %}<span class="badge b-warn">{{ m.icon('clock') }}Görüşme bekleniyor</span>{% endif %}
+      </div>
       {% if is_acked %}
-      <span class="badge badge-acked">✓ Müşteri Arandı (Takip Bitti)</span>
-      {% elif days <= 30 %}
-      <span class="badge" style="background:#fff3bf;color:#d9480f;border:1px solid #ffd43b">⚠️ Görüşme Bekleniyor</span>
-      {% endif %}
-    </h2>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      {% if wa_tenant_url %}
-      <a href="{{ wa_tenant_url }}" target="_blank" class="btn-wa">
-        💬 Kiracıya WhatsApp'tan Yaz
-      </a>
-      {% endif %}
-      {% if wa_landlord_url %}
-      <a href="{{ wa_landlord_url }}" target="_blank" class="btn-wa" style="background:#128c7e">
-        💬 Ev Sahibine WhatsApp'tan Yaz
-      </a>
+      <div class="alert ok mb0">{{ m.icon('check') }}<div><b>{{ p.renewal_date|tdate }} dönemi için müşteriyle görüşüldü.</b> Otomatik bildirimler bu dönem için kapatıldı.
+        {% if p.last_contacted_notes %}<br><i>“{{ p.last_contacted_notes }}”</i>{% endif %}
+        {% if p.last_contacted_at %} <span class="mute">({{ p.last_contacted_at|dt }})</span>{% endif %}</div></div>
+      {% else %}
+      <p class="mute">Kiracı veya ev sahibiyle görüştüğünüzde kaydedin; bu dönemin otomatik hatırlatmaları durur.</p>
+      <form class="inline-form" method="post" action="{{ url_for('property_aradim', pid=p.id) }}">
+        {{ m.csrf_field() }}
+        <input type="text" name="notes" placeholder="Görüşme notu (örn: Kiracı %35 zamma onay verdi)">
+        <button type="submit" class="btn ok">{{ m.icon('phone') }}Müşteriyi aradım</button>
+      </form>
       {% endif %}
     </div>
+
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('trend') }}Kira artışı</h2>
+        {% if tufe is not none %}<span class="badge b-gold">TÜFE 12 ay ort. {{ tufe|pct }} · azami {{ cap|money }}</span>{% endif %}</div>
+      {% if over_cap %}<div class="alert err">{{ m.icon('alert') }}<div>Planlanan artış ({{ p.planned_pct|pct }}) yasal TÜFE tavanını ({{ tufe|pct }}) aşıyor. TBK 344 uyarınca aşan kısım geçersizdir.</div></div>{% endif %}
+      <div class="two">
+        <form method="post" action="{{ url_for('property_zam', pid=p.id) }}">
+          {{ m.csrf_field() }}
+          <h3>Bu yılın artışını gir</h3>
+          <label for="zam_value">Oran (%30) veya yeni kira (45000)</label>
+          <input id="zam_value" name="value" required placeholder="{{ ('%' ~ tufe|round(2)) if tufe is not none else '%30' }}">
+          <button class="btn mt12" type="submit">{{ m.icon('check') }}Kaydet</button>
+        </form>
+        <form method="post" action="{{ url_for('property_renew', pid=p.id) }}" data-confirm="Sözleşme yenilendi olarak kaydedilsin mi? Yenileme tarihi bir yıl ileri alınır.">
+          {{ m.csrf_field() }}
+          <h3>Sözleşme yenilendi</h3>
+          <label for="renew_value">Yeni kira (boşsa planlanan kullanılır)</label>
+          <input id="renew_value" name="value" inputmode="decimal" placeholder="{{ p.planned_rent|plainnum if p.planned_rent else '' }}">
+          <button class="btn ghost mt12" type="submit">{{ m.icon('refresh') }}Yenilendi olarak kaydet</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    {% for panel in panels %}{{ panel }}{% endfor %}
+
+    {% if hist %}
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('clock') }}Kira geçmişi</h2></div>
+      <div class="timeline">
+        {% for h in hist %}
+        <div class="tl"><b class="num">{{ h.old_rent|money }} → {{ h.new_rent|money }} <span class="badge b-gold">{{ h.pct|pct }}</span></b><small>{{ h.effective_date|tdate }} yenilemesi</small></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
   </div>
 
-  {% if is_acked %}
-  <div style="background:#e6fcf5;border:1px solid #96f2d7;color:#0ca678;padding:12px;border-radius:8px">
-    <b>✓ Bu kira yenileme dönemi ({{ p.renewal_date|tdate }}) için müşteriyle görüşüldü.</b>
-    <div style="font-size:13px;color:#2b8a3e;margin-top:4px">
-      Otomatik bildirimler bu dönem için kapatıldı.
-      {% if p.last_contacted_notes %}— <i>Not: "{{ p.last_contacted_notes }}"</i>{% endif %}
-      {% if p.last_contacted_at %}<span class="mute">({{ p.last_contacted_at[:16].replace('T', ' ') }})</span>{% endif %}
+  <div>
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('users') }}Taraflar</h2><a class="more" href="{{ url_for('property_edit', pid=p.id) }}">{{ m.icon('edit', 'sm') }}Düzenle</a></div>
+      <div class="kv">
+        <div>Kiracı</div><div><b>{{ p.tenant_name or '-' }}</b>{% if p.tenant_phone %}<br><a href="tel:{{ p.tenant_phone }}">{{ p.tenant_phone|phone }}</a>{% endif %}</div>
+        <div>Ev sahibi</div><div><b>{{ p.landlord_name or '-' }}</b>{% if p.landlord_phone %}<br><a href="tel:{{ p.landlord_phone }}">{{ p.landlord_phone|phone }}</a>{% endif %}</div>
+        <div>Sorumlu emlakçı</div><div>{{ agent.name if agent else '-' }}</div>
+        <div>Sözleşme başlangıcı</div><div>{{ p.lease_start_date|tdate if p.lease_start_date else '—' }}</div>
+        <div>Kayıt tarihi</div><div>{{ p.created_at|dt }}</div>
+      </div>
+    </div>
+    {% if p.notes %}
+    <div class="card"><div class="card-h"><h2>{{ m.icon('file') }}Notlar</h2></div><p class="pre mb0">{{ p.notes }}</p></div>
+    {% endif %}
+    <div class="card flat">
+      <div class="card-h"><h2>{{ m.icon('dots') }}Diğer işlemler</h2></div>
+      <div class="stack">
+        {% if p.status == 'active' %}<button type="button" class="btn warn block" data-open="vacantModal">{{ m.icon('door') }}Kiracı çıktı / mülk boşaldı</button>{% endif %}
+        <form method="post" action="{{ url_for('property_delete', pid=p.id) }}" data-confirm="Mülk arşivlensin mi? Takip ve hatırlatmalar durur.">
+          {{ m.csrf_field() }}<button class="btn danger block" type="submit">{{ m.icon('archive') }}Arşivle</button>
+        </form>
+      </div>
     </div>
   </div>
-  {% else %}
-  <div style="background:#fff9db;border:1px solid #ffe066;padding:12px;border-radius:8px">
-    <div style="font-size:13px;color:#495057;margin-bottom:8px">
-      Kira artış dönemi yaklaşıyor. Kiracı veya ev sahibiyle telefonla görüştüğünüzde aşağıdaki butona basarak bildirimleri bu dönem için durdurabilirsiniz:
-    </div>
-    <form method="post" action="{{ url_for('property_aradim', pid=p.id) }}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <input type="text" name="notes" placeholder="Görüşme notu ekleyin (örn: Kiracı %45 zamma onay verdi)" style="flex:1;min-width:220px;padding:8px 12px;font-size:13px">
-      <button type="submit" class="btn ok sm" style="padding:8px 16px;font-weight:700">📞 Müşteriyi Aradım (Takibi Kapat)</button>
-    </form>
-  </div>
-  {% endif %}
 </div>
 
-<div class="two">
-  <div class="card">
-    <h2>Genel Bilgiler</h2>
-    <div class="kv">
-      <div>Sorumlu emlakçı</div><div>{{ agent.name if agent else '-' }}</div>
-      <div>Ev sahibi</div><div>{{ p.landlord_name or '-' }} {% if p.landlord_phone %}<b>{{ p.landlord_phone }}</b>{% endif %}</div>
-      <div>Kiracı</div><div>{{ p.tenant_name or '-' }} {% if p.tenant_phone %}<b>{{ p.tenant_phone }}</b>{% endif %}</div>
-      <div>Mevcut kira</div><div><b>{{ p.rent|money }}</b></div>
-      <div>Yenileme</div><div class="{{ 'bad' if days < 0 else ('warn' if days <= 30 else '') }}"><b>{{ p.renewal_date|tdate }}</b> ({{ days if days >= 0 else -days }} gün {{ 'kaldı' if days >= 0 else 'geçti' }})</div>
-      <div>Geçen sene artış</div><div>{{ p.last_increase_pct|pct }}{% if p.last_increase_amount %} (+{{ p.last_increase_amount|money }}){% endif %}</div>
-      <div>Bu sene artış</div><div>{% if p.planned_rent %}<b>{{ p.planned_pct|pct }}</b> → <b>{{ p.planned_rent|money }}</b>{% else %}<span class="warn">girilmedi</span>{% endif %}</div>
-      {% if tufe is not none %}<div>TÜFE sınırı</div><div>{{ tufe|pct }} → azami {{ cap|money }}</div>{% endif %}
-      {% if p.notes %}<div>Not</div><div>{{ p.notes }}</div>{% endif %}
-    </div>
-    {% if over_cap %}<p class="bad">🚨 Planlanan artış yasal TÜFE sınırını aşıyor.</p>{% endif %}
-  </div>
-
-  <div class="card">
-    <h2>Bu seneki artışı gir</h2>
-    <form method="post" action="{{ url_for('property_zam', pid=p.id) }}">
-      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <label>Oran (%30) veya yeni kira tutarı (45000)</label><input name="value" required>
-      <button class="btn">Kaydet</button>
-    </form>
-    <h2 style="margin-top:22px">Sözleşme yenilendi</h2>
-    <form method="post" action="{{ url_for('property_renew', pid=p.id) }}">
-      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <label>Yeni kira (boşsa planlanan kullanılır)</label><input name="value" placeholder="{{ p.planned_rent|int if p.planned_rent else '' }}">
-      <button class="btn">Yenilendi olarak kaydet</button>
-    </form>
-  </div>
-</div>
-
-{% if hist %}
-<div class="card">
-  <h2>Kira geçmişi</h2>
-  <table>
-    <tr><th>Tarih</th><th>Eski</th><th>Yeni</th><th>Artış</th></tr>
-    {% for h in hist %}
-    <tr><td>{{ h.effective_date|tdate }}</td><td>{{ h.old_rent|money }}</td><td>{{ h.new_rent|money }}</td><td>{{ h.pct|pct }}</td></tr>
-    {% endfor %}
-  </table>
-</div>
-{% endif %}
-
-<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
-  {% if p.status == 'active' %}
-  <button type="button" class="btn" style="background:#b7791f;color:#fff" onclick="openVacantModal()">
-    🚪 Kiracı Çıktı / Mülk Boşaldı
-  </button>
-  {% endif %}
-
-  <form method="post" action="{{ url_for('property_delete', pid=p.id) }}" onsubmit="return confirm('Mülk arşivlensin mi?')" style="display:inline">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="btn danger">Arşivle</button>
-  </form>
-  <a class="btn alt" style="text-decoration:none" href="{{ url_for('dashboard') }}">← Geri Dön</a>
-</div>
-
-<!-- KİRACI ÇIKTI MODALI -->
-<div id="vacantModal" class="modal-overlay" onclick="if(event.target===this)closeVacantModal()">
-  <div class="modal-box">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:10px">
-      <h2 style="margin:0;color:#b7791f">🚪 Kiracı Çıkışı / Tahliye İşlemi</h2>
-      <button type="button" onclick="closeVacantModal()" style="background:none;border:0;font-size:22px;cursor:pointer;color:var(--mute)">&times;</button>
-    </div>
-
-    <p style="font-size:13px;color:var(--mute);margin-top:0">
-      Kiracı tahliyesiyle ilgili detayları kaydedip mülkü portföyde boş olarak güncelleyebilirsiniz:
-    </p>
-
+<dialog id="vacantModal" class="dlg" aria-label="Kiracı çıkışı">
+  <div class="modal">
+    <div class="modal-h"><h2>{{ m.icon('door') }}Kiracı çıkışı / tahliye</h2><button class="x-btn" type="button" data-close aria-label="Kapat">{{ m.icon('x') }}</button></div>
+    <p class="mute">Tahliye detaylarını kaydedin; mülk portföyde boş olarak görünür ve uygun müşteri talepleriyle eşleştirilir.</p>
     <form method="post" action="{{ url_for('property_kiraci_cikti', pid=p.id) }}">
-      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-
-      <label for="exit_date">Tahliye / Anahtar Teslim Tarihi: *</label>
-      <input type="date" name="exit_date" id="exit_date" required>
-
-      <label for="deposit_notes">Depozito İadesi & Mahsup Durumu:</label>
-      <textarea name="deposit_notes" id="deposit_notes" rows="2" placeholder="Örn: 20.000 TL depozitodan 4.000 TL boya/hasar masrafı kesildi, 16.000 TL kiracıya EFT yapıldı."></textarea>
-
-      <label for="handover_notes">Mülkün Güncel Durumu & Anahtar:</label>
-      <textarea name="handover_notes" id="handover_notes" rows="2" placeholder="Örn: 2 takım anahtar alındı. Boya badana gerekiyor. Elektrik/su abonelikleri kapatıldı."></textarea>
-
-      <label>Mülkün Sonraki Adımı:</label>
-      <div style="display:flex;flex-direction:column;gap:6px;margin:8px 0 14px">
-        <label style="font-weight:normal;display:flex;align-items:center;gap:6px">
-          <input type="radio" name="next_step" value="vacant" checked style="width:auto"> 
-          Mülk Boşta kalsın (Yeni kiracı aranıyor olarak portföyde görünsün)
-        </label>
-        <label style="font-weight:normal;display:flex;align-items:center;gap:6px">
-          <input type="radio" name="next_step" value="archived" style="width:auto"> 
-          Mülk Sahibi Kendisi Kullanacak / Arşive Al
-        </label>
-      </div>
-
-      <div style="display:flex;gap:10px">
-        <button type="submit" class="btn ok" style="flex:1">Kiracı Çıkışını Kaydet</button>
-        <button type="button" class="btn alt" onclick="closeVacantModal()">Vazgeç</button>
-      </div>
+      {{ m.csrf_field() }}
+      <label for="exit_date">Tahliye / anahtar teslim tarihi *</label>
+      <input type="date" name="exit_date" id="exit_date" required data-default="today">
+      <label for="deposit_notes">Depozito iadesi & mahsup</label>
+      <textarea name="deposit_notes" id="deposit_notes" rows="2" placeholder="Örn: 20.000 ₺ depozitodan 4.000 ₺ boya masrafı kesildi, 16.000 ₺ iade edildi."></textarea>
+      <label for="handover_notes">Mülkün durumu & anahtar</label>
+      <textarea name="handover_notes" id="handover_notes" rows="2" placeholder="Örn: 2 takım anahtar alındı. Boya gerekiyor. Abonelikler kapatıldı."></textarea>
+      <label>Sonraki adım</label>
+      <label class="check"><input type="radio" name="next_step" value="vacant" checked> Boşta kalsın (yeni kiracı aranıyor)</label>
+      <label class="check"><input type="radio" name="next_step" value="archived"> Mülk sahibi kullanacak / arşive al</label>
+      <div class="modal-f"><button type="submit" class="btn ok">{{ m.icon('check') }}Kaydet</button><button type="button" class="btn ghost" data-close>Vazgeç</button></div>
     </form>
   </div>
-</div>
+</dialog>
 
-<script>
-function openVacantModal() {
-  const today = new Date().toISOString().split('T')[0];
-  document.getElementById('exit_date').value = today;
-  document.getElementById('vacantModal').classList.add('active');
-}
-function closeVacantModal() {
-  document.getElementById('vacantModal').classList.remove('active');
-}
-// Set defaults for new tenant form if present
-window.addEventListener('DOMContentLoaded', () => {
-  const ntStart = document.getElementById('nt_start');
-  const ntRenew = document.getElementById('nt_renewal');
-  if (ntStart && !ntStart.value) {
-    const now = new Date();
-    ntStart.value = now.toISOString().split('T')[0];
-    const nextYear = new Date(now.setFullYear(now.getFullYear() + 1));
-    if (ntRenew) ntRenew.value = nextYear.toISOString().split('T')[0];
-  }
-});
-</script>
+{% if agents %}
+<dialog id="transferModal" class="dlg" aria-label="Mülkü devret">
+  <div class="modal">
+    <div class="modal-h"><h2>{{ m.icon('swap') }}Mülkü devret</h2><button class="x-btn" type="button" data-close aria-label="Kapat">{{ m.icon('x') }}</button></div>
+    <form method="post" action="{{ url_for('property_transfer', pid=p.id) }}">
+      {{ m.csrf_field() }}
+      <label for="to_user">Yeni sorumlu danışman</label>
+      <select name="to_user" id="to_user">{% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if a.id == p.agent_id }}>{{ a.name }}</option>{% endfor %}</select>
+      <div class="hint">Hatırlatmalar bundan sonra yeni danışmana gider.</div>
+      <div class="modal-f"><button type="submit" class="btn">{{ m.icon('swap') }}Devret</button><button type="button" class="btn ghost" data-close>Vazgeç</button></div>
+    </form>
+  </div>
+</dialog>
+{% endif %}
 {% endblock %}

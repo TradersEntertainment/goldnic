@@ -1,8 +1,35 @@
 {% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Aktivite — {{ brand }}{% endblock %}
 {% block body %}
-<div class="card"><h1>Son işlemler</h1>
-<table><tr><th>Zaman</th><th>Kişi</th><th>İşlem</th><th>Mülk</th><th>Detay</th></tr>
-{% for r in rows %}<tr><td>{{ r.ts[:16].replace('T',' ') }}</td><td>{{ r.user_name }}</td><td>{{ r.action }}</td>
-<td>{% if r.property_id %}<a href="{{ url_for('property_view', pid=r.property_id) }}">#{{ r.property_id }}</a>{% endif %}</td><td>{{ r.detail or '' }}</td></tr>{% endfor %}
-</table></div>
+<div class="page-head">
+  <div><div class="eyebrow">Denetim izi</div><h1>Son işlemler</h1><div class="sub">Kim, ne zaman, hangi kayıtta ne yaptı.</div></div>
+  <form method="get" class="actions">
+    <select name="user" data-autosubmit aria-label="Kişiye göre filtrele" style="min-width:220px">
+      <option value="">Tüm ekip</option>
+      {% for u in users %}<option value="{{ u.id }}" {{ 'selected' if selected_user == u.id }}>{{ u.name }}</option>{% endfor %}
+    </select>
+  </form>
+</div>
+<div class="card">
+  {% if not rows %}{{ m.empty('Kayıt yok', 'Bu filtre için işlem bulunmuyor.', 'activity') }}{% else %}
+  <input class="mb16" type="search" placeholder="İşlem, kişi veya detay ara…" data-filter="#activityTable">
+  <div class="table-wrap">
+  <table class="rt" id="activityTable">
+    <thead><tr><th>Zaman</th><th>Kişi</th><th>İşlem</th><th>Kayıt</th><th>Detay</th></tr></thead>
+    <tbody>
+    {% for r in rows %}{% set lab = action_labels.get(r.action, (r.action, 'activity', None)) %}
+    <tr data-search="{{ r.user_name }} {{ lab[0] }} {{ r.detail or '' }}">
+      <td class="rt-main"><span class="t-title">{{ lab[0] }}</span><span class="t-sub">{{ r.ts|dt }}</span></td>
+      <td data-label="Kişi">{{ r.user_name }}</td>
+      <td data-label="İşlem"><span class="badge">{{ m.icon(lab[1]) }}{{ r.action }}</span></td>
+      <td data-label="Kayıt">{% if r.property_id %}{% if lab[2] == 'property' %}<a href="{{ url_for('property_view', pid=r.property_id) }}">Mülk #{{ r.property_id }}</a>{% elif lab[2] == 'user' %}<span class="mute">Kullanıcı #{{ r.property_id }}</span>{% elif lab[2] == 'listing' %}<span class="mute">İlan #{{ r.property_id }}</span>{% else %}#{{ r.property_id }}{% endif %}{% endif %}</td>
+      <td data-label="Detay"><span class="mute">{{ r.detail or '' }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
 {% endblock %}

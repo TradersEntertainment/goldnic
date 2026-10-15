@@ -114,11 +114,58 @@ EDITABLE_PROPERTY_COLUMNS = {
     "planned_pct", "planned_rent", "notes", "status", "agent_id",
     "exit_date", "deposit_notes", "handover_notes",
     "last_contacted_at", "last_contacted_due", "last_contacted_notes",
+    "lease_start_date",
 }
+
+# Sonradan eklenen sütunlar: eski veritabanlarına PRAGMA table_info kontrolüyle ALTER TABLE uygulanır.
+MIGRATION_COLUMNS: dict[str, dict[str, str]] = {
+    "users": {
+        "username": "TEXT",
+        "password_hash": "TEXT",
+        "can_see_all": "INTEGER NOT NULL DEFAULT 0",
+    },
+    "properties": {
+        # kiracı çıkışı ve görüşme takibi
+        "exit_date": "TEXT",
+        "deposit_notes": "TEXT",
+        "handover_notes": "TEXT",
+        "last_contacted_at": "TEXT",
+        "last_contacted_due": "TEXT",
+        "last_contacted_notes": "TEXT",
+        # mevcut kiracıyla ilk sözleşmenin başlangıcı (5. yıl / 10. yıl hesapları için)
+        "lease_start_date": "TEXT",
+    },
+    "sahibinden_listings": {
+        # kiralama / satış işlemi (deal_rent satılıkta satış bedelini, deal_tenant_* alıcıyı tutar)
+        "deal_date": "TEXT",
+        "deal_notes": "TEXT",
+        "deal_rent": "REAL",
+        "deal_tenant_name": "TEXT",
+        "deal_tenant_phone": "TEXT",
+    },
+}
+
+
+# users.id'ye referans veren sütunlar (kullanıcı birleştirmede taşınır; modüller ekleme yapabilir)
+USER_REF_COLUMNS: list[tuple[str, str]] = [
+    ("properties", "agent_id"),
+    ("sahibinden_listings", "consultant_id"),
+    ("activity", "user_id"),
+    ("rent_history", "created_by"),
+    ("invites", "created_by"),
+]
 
 
 def now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def ensure_columns(c: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+    """Eksik sütunları ekler (geriye dönük uyumlu şema güncellemesi)."""
+    existing = {r[1] for r in c.execute(f"PRAGMA table_info({table})")}
+    for name, decl in columns.items():
+        if name not in existing:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
 class Database:
@@ -126,42 +173,11 @@ class Database:
         self.path = path
         with closing(self._conn()) as c:
             c.executescript(SCHEMA)
-            cols = {r["name"] for r in c.execute("PRAGMA table_info(users)")}
-            if "username" not in cols:  # eski veritabanı
-                c.execute("ALTER TABLE users ADD COLUMN username TEXT")
+            had_username = "username" in {r["name"] for r in c.execute("PRAGMA table_info(users)")}
+            for table, columns in MIGRATION_COLUMNS.items():
+                ensure_columns(c, table, columns)
+            if not had_username:  # eski veritabanı
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username ON users(username)")
-            if "password_hash" not in cols:
-                c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-            if "can_see_all" not in cols:
-                c.execute("ALTER TABLE users ADD COLUMN can_see_all INTEGER NOT NULL DEFAULT 0")
-
-            # Mülk tahliye / kiracı çıkışı ve arama sütunları
-            p_cols = {r["name"] for r in c.execute("PRAGMA table_info(properties)")}
-            if "exit_date" not in p_cols:
-                c.execute("ALTER TABLE properties ADD COLUMN exit_date TEXT")
-            if "deposit_notes" not in p_cols:
-                c.execute("ALTER TABLE properties ADD COLUMN deposit_notes TEXT")
-            if "handover_notes" not in p_cols:
-                c.execute("ALTER TABLE properties ADD COLUMN handover_notes TEXT")
-            if "last_contacted_at" not in p_cols:
-                c.execute("ALTER TABLE properties ADD COLUMN last_contacted_at TEXT")
-            if "last_contacted_due" not in p_cols:
-                c.execute("ALTER TABLE properties ADD COLUMN last_contacted_due TEXT")
-            if "last_contacted_notes" not in p_cols:
-                c.execute("ALTER TABLE properties ADD COLUMN last_contacted_notes TEXT")
-
-            # Sahibinden kiralama / işlem sütunları
-            s_cols = {r["name"] for r in c.execute("PRAGMA table_info(sahibinden_listings)")}
-            if "deal_date" not in s_cols:
-                c.execute("ALTER TABLE sahibinden_listings ADD COLUMN deal_date TEXT")
-            if "deal_notes" not in s_cols:
-                c.execute("ALTER TABLE sahibinden_listings ADD COLUMN deal_notes TEXT")
-            if "deal_rent" not in s_cols:
-                c.execute("ALTER TABLE sahibinden_listings ADD COLUMN deal_rent REAL")
-            if "deal_tenant_name" not in s_cols:
-                c.execute("ALTER TABLE sahibinden_listings ADD COLUMN deal_tenant_name TEXT")
-            if "deal_tenant_phone" not in s_cols:
-                c.execute("ALTER TABLE sahibinden_listings ADD COLUMN deal_tenant_phone TEXT")
             c.commit()
 
     def _conn(self) -> sqlite3.Connection:
@@ -237,12 +253,51 @@ class Database:
                 "UPDATE users SET password_hash=?, role='owner', can_see_all=1, active=1 WHERE id=?",
                 (pwd_hash, u["id"]),
             )
+            self.consolidate_duplicate_users()
             return u["id"]
-        return self.execute(
+        uid = self.execute(
             "INSERT INTO users (channel, chat_id, name, role, can_see_all, active, created_at, username, password_hash) "
             "VALUES (?, ?, ?, 'owner', 1, 1, ?, ?, ?)",
             ("web", username.lower(), name, now_iso(), username.lower(), pwd_hash),
         )
+        self.consolidate_duplicate_users()
+        return uid
+
+    @staticmethod
+    def _is_phantom(u) -> bool:
+        """Sahibinden botunun danışman adına açtığı, giriş yapamayan yer tutucu kullanıcı."""
+        return not u["password_hash"] and u["channel"] == "web" and u["chat_id"] == u["name"]
+
+    def consolidate_duplicate_users(self) -> int:
+        """Aynı isimli 'hayalet' kullanıcıları gerçek hesapla birleştirir.
+
+        Sahibinden senkronu her danışman adı için şifresiz bir kullanıcı açar; ofis sahibi
+        ADMIN_USERNAME ile ayrıca oluşturulunca aynı kişi iki kez görünür ve kendi ilanlarından
+        kiralanan mülkler hayalet hesaba yazılırdı. Mülk/ilan/aktivite bağları gerçek hesaba
+        taşınır, hayalet kayıt silinir. Birleştirilen kullanıcı sayısını döner.
+        """
+        merged = 0
+        with closing(self._conn()) as c:
+            tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            for d in c.execute("SELECT name FROM users GROUP BY name HAVING COUNT(*) > 1").fetchall():
+                users = c.execute(
+                    "SELECT * FROM users WHERE name=? ORDER BY (password_hash IS NULL), (role != 'owner'), id",
+                    (d["name"],),
+                ).fetchall()
+                real = [u for u in users if not self._is_phantom(u)]
+                if not real:
+                    continue
+                keeper = real[0]
+                for u in users:
+                    if u["id"] == keeper["id"] or not self._is_phantom(u):
+                        continue
+                    for table, col in USER_REF_COLUMNS:
+                        if table in tables:
+                            c.execute(f"UPDATE {table} SET {col}=? WHERE {col}=?", (keeper["id"], u["id"]))
+                    c.execute("DELETE FROM users WHERE id=?", (u["id"],))
+                    merged += 1
+            c.commit()
+        return merged
 
     def create_or_update_agent(
         self,
@@ -262,12 +317,15 @@ class Database:
                 "UPDATE users SET name=?, username=?, password_hash=?, role=?, can_see_all=?, active=1 WHERE id=?",
                 (name, username.lower(), password_hash, role, can_see_all, u["id"]),
             )
+            self.consolidate_duplicate_users()
             return u["id"]
-        return self.execute(
+        uid = self.execute(
             "INSERT INTO users (channel, chat_id, name, role, can_see_all, active, created_at, username, password_hash) "
             "VALUES ('web', ?, ?, ?, ?, 1, ?, ?, ?)",
             (username.lower(), name, role, can_see_all, now_iso(), username.lower(), password_hash),
         )
+        self.consolidate_duplicate_users()
+        return uid
 
     def update_user_permission(self, user_id: int, can_see_all: int, role: str | None = None) -> None:
         """Kullanıcının herkesin ilanlarını görme yetkisini veya rolünü günceller."""
@@ -361,6 +419,16 @@ class Database:
             return True
         return False
 
+    def acked_pairs(self) -> set[tuple[int, str]]:
+        """'Müşteriyi aradım' denmiş (mülk, yenileme tarihi) çiftleri — panelde tek sorguda kontrol için."""
+        pairs = {
+            (r["property_id"], r["due_date"])
+            for r in self.query("SELECT DISTINCT property_id, due_date FROM reminder_log WHERE acked=1")
+        }
+        for r in self.query("SELECT id, last_contacted_due FROM properties WHERE last_contacted_due IS NOT NULL"):
+            pairs.add((r["id"], r["last_contacted_due"]))
+        return pairs
+
     def mark_reminder(self, pid: int, due: str, stage: int) -> None:
         self.execute(
             "INSERT OR IGNORE INTO reminder_log (property_id, due_date, stage, sent_at)"
@@ -385,14 +453,24 @@ class Database:
         )
 
     def bulk_add_properties(
-        self, items: list[dict], default_agent_id: int
+        self, items: list[dict], default_agent_id: int, skip_duplicates: bool = True
     ) -> tuple[int, list[str]]:
-        """Toplu mülk/kira kontratı içe aktarır. (başarılı_sayı, hatalar_listesi) döner."""
+        """Toplu mülk/kira kontratı içe aktarır. (başarılı_sayı, hatalar_listesi) döner.
+
+        skip_duplicates: aynı başlık + aynı kiracıya sahip aktif/boş kayıt varsa (veya aynı
+        dosyada iki kez geçiyorsa) satırı atlar; aynı Excel'in yanlışlıkla iki kez
+        yapıştırılması portföyü çiftlemez.
+        """
         from . import rent as R
 
         agents = {u["name"].strip().lower(): u["id"] for u in self.list_users()}
         success_count = 0
         errors: list[str] = []
+        seen: dict[tuple[str, str], int] = {}
+        if skip_duplicates:
+            for st in ("active", "vacant"):
+                for p in self.list_properties(status=st):
+                    seen[(normalize_title(p["title"]), normalize_title(p["tenant_name"] or ""))] = p["id"]
 
         for idx, item in enumerate(items, 1):
             title = str(item.get("title") or item.get("baslik") or item.get("daire") or "").strip()
@@ -433,8 +511,22 @@ class Database:
             tenant_phone = str(item.get("tenant_phone") or item.get("kiraci_tel") or "").strip() or None
             notes = str(item.get("notes") or item.get("notlar") or "").strip() or None
 
+            lease_start = None
+            raw_start = str(item.get("lease_start_date") or item.get("baslangic") or "").strip()
+            if raw_start:
+                try:
+                    lease_start = R.parse_date(raw_start).isoformat()
+                except ValueError:
+                    errors.append(f"Satır #{idx} ({title}): Sözleşme başlangıç tarihi okunamadı ({raw_start}); "
+                                  "kayıt başlangıç tarihi olmadan eklendi.")
+
+            key = (normalize_title(title), normalize_title(tenant_name or ""))
+            if skip_duplicates and key in seen:
+                errors.append(f"Satır #{idx} ({title}): Zaten kayıtlı (#{seen[key]}), tekrar eklenmedi.")
+                continue
+
             try:
-                self.add_property(
+                pid = self.add_property(
                     agent_id=agent_id,
                     title=title,
                     landlord_name=landlord_name,
@@ -444,7 +536,9 @@ class Database:
                     rent=rent,
                     renewal_date=renewal_date,
                     notes=notes,
+                    lease_start_date=lease_start,
                 )
+                seen[key] = pid
                 success_count += 1
             except Exception as e:
                 errors.append(f"Satır #{idx} ({title}): Kayıt hatası: {e}")
@@ -506,8 +600,11 @@ class Database:
         loc = item.get("location", "")
         pdate = item.get("date") or item.get("publish_date") or ""
 
-        # Danışmanı users tablosunda bul veya oluştur
-        agent = self.one("SELECT id FROM users WHERE name=?", (c_name,))
+        # Danışmanı users tablosunda bul veya oluştur (giriş yapabilen gerçek hesap öncelikli)
+        agent = self.one(
+            "SELECT id FROM users WHERE name=? ORDER BY (password_hash IS NULL), (role != 'owner'), id LIMIT 1",
+            (c_name,),
+        )
         if not agent:
             agent_id = self.add_user(chat_id=c_name, name=c_name, role="agent", channel="web")
         else:
@@ -594,6 +691,9 @@ class Database:
         if consultant:
             r_where += " AND consultant_name=?"
         rented = self.one(f"SELECT COUNT(*) AS c FROM sahibinden_listings {r_where}", r_params)["c"]
+        sold = self.one(
+            f"SELECT COUNT(*) AS c FROM sahibinden_listings {r_where.replace('rented', 'sold')}", r_params
+        )["c"]
 
         consultants = self.query(
             "SELECT consultant_name AS name, consultant_phone AS phone, COUNT(*) AS count "
@@ -605,6 +705,7 @@ class Database:
             "satilik": satilik,
             "republished": republished,
             "rented": rented,
+            "sold": sold,
             "consultants": [dict(c) for c in consultants],
         }
 
@@ -641,6 +742,7 @@ class Database:
             landlord_phone=landlord_phone or None,
             notes=" ".join(note_parts),
             status="active",
+            lease_start_date=start_date or None,
         )
         self.execute(
             "UPDATE sahibinden_listings SET status='rented', property_id=?, deal_date=?, "
@@ -648,6 +750,22 @@ class Database:
             (prop_id, start_date or now[:10], rent, tenant_name, tenant_phone, notes, lid),
         )
         return prop_id
+
+    def mark_listing_sold(
+        self,
+        lid: int,
+        price: float,
+        deal_date: str,
+        buyer_name: str = "",
+        buyer_phone: str = "",
+        notes: str = "",
+    ) -> None:
+        """Satılık ilanı 'satıldı' yapar (satış bedeli ve alıcı bilgisi deal_* alanlarına yazılır)."""
+        self.execute(
+            "UPDATE sahibinden_listings SET status='sold', deal_date=?, deal_rent=?, deal_tenant_name=?, "
+            "deal_tenant_phone=?, deal_notes=? WHERE id=?",
+            (deal_date, price, buyer_name or None, buyer_phone or None, notes or None, lid),
+        )
 
     def close_or_delete_listing(self, lid: int, action: str = "archive", reason: str = "") -> None:
         """İlanı yayından kaldırır veya tamamen siler."""
@@ -691,8 +809,9 @@ class Database:
         comb = (hist + (notes or "")).strip()
         self.execute(
             "UPDATE properties SET status='active', tenant_name=?, tenant_phone=?, rent=?, "
-            "renewal_date=?, notes=?, exit_date=NULL, planned_pct=NULL, planned_rent=NULL WHERE id=?",
-            (tenant_name, tenant_phone, rent, renewal_date, comb, pid),
+            "renewal_date=?, notes=?, exit_date=NULL, planned_pct=NULL, planned_rent=NULL, "
+            "lease_start_date=? WHERE id=?",
+            (tenant_name, tenant_phone, rent, renewal_date, comb, start_date or None, pid),
         )
 
 
