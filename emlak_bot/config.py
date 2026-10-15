@@ -28,9 +28,14 @@ class Config:
 
 def load_config() -> Config:
     load_dotenv()
-    owners = {
-        int(x) for x in os.getenv("OWNER_TELEGRAM_IDS", "").replace(" ", "").split(",") if x
-    }
+    raw_owners = [x for x in os.getenv("OWNER_TELEGRAM_IDS", "").replace(" ", "").split(",") if x]
+    bad = [x for x in raw_owners if not x.lstrip("-").isdigit()]
+    if bad:
+        raise SystemExit(
+            f"OWNER_TELEGRAM_IDS sadece SAYISAL Telegram ID içermeli, kullanıcı adı olmaz: {bad}. "
+            "@userinfobot'a /start yazıp 'Id' değerini alın (örn. 123456789)."
+        )
+    owners = {int(x) for x in raw_owners}
     secret = os.getenv("SECRET_KEY", "")
     if not secret:
         log.warning("SECRET_KEY tanımlı değil; geçici anahtar üretildi (yeniden başlatınca web oturumları kapanır).")
