@@ -68,14 +68,61 @@
   </form>
 </div>
 {% endif %}
+<!-- MÜŞTERİ TAKİP VE WHATSAPP KARTI -->
+<div class="card" style="margin-bottom:16px;border-left:5px solid {% if is_acked %}#0ca678{% elif days <= 30 %}#f08c00{% else %}var(--pri){% endif %}">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+    <h2 style="margin:0;display:flex;align-items:center;gap:8px">
+      📱 İletişim & WhatsApp Takibi
+      {% if is_acked %}
+      <span class="badge badge-acked">✓ Müşteri Arandı (Takip Bitti)</span>
+      {% elif days <= 30 %}
+      <span class="badge" style="background:#fff3bf;color:#d9480f;border:1px solid #ffd43b">⚠️ Görüşme Bekleniyor</span>
+      {% endif %}
+    </h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      {% if wa_tenant_url %}
+      <a href="{{ wa_tenant_url }}" target="_blank" class="btn-wa">
+        💬 Kiracıya WhatsApp'tan Yaz
+      </a>
+      {% endif %}
+      {% if wa_landlord_url %}
+      <a href="{{ wa_landlord_url }}" target="_blank" class="btn-wa" style="background:#128c7e">
+        💬 Ev Sahibine WhatsApp'tan Yaz
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if is_acked %}
+  <div style="background:#e6fcf5;border:1px solid #96f2d7;color:#0ca678;padding:12px;border-radius:8px">
+    <b>✓ Bu kira yenileme dönemi ({{ p.renewal_date|tdate }}) için müşteriyle görüşüldü.</b>
+    <div style="font-size:13px;color:#2b8a3e;margin-top:4px">
+      Otomatik bildirimler bu dönem için kapatıldı.
+      {% if p.last_contacted_notes %}— <i>Not: "{{ p.last_contacted_notes }}"</i>{% endif %}
+      {% if p.last_contacted_at %}<span class="mute">({{ p.last_contacted_at[:16].replace('T', ' ') }})</span>{% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div style="background:#fff9db;border:1px solid #ffe066;padding:12px;border-radius:8px">
+    <div style="font-size:13px;color:#495057;margin-bottom:8px">
+      Kira artış dönemi yaklaşıyor. Kiracı veya ev sahibiyle telefonla görüştüğünüzde aşağıdaki butona basarak bildirimleri bu dönem için durdurabilirsiniz:
+    </div>
+    <form method="post" action="{{ url_for('property_aradim', pid=p.id) }}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="text" name="notes" placeholder="Görüşme notu ekleyin (örn: Kiracı %45 zamma onay verdi)" style="flex:1;min-width:220px;padding:8px 12px;font-size:13px">
+      <button type="submit" class="btn ok sm" style="padding:8px 16px;font-weight:700">📞 Müşteriyi Aradım (Takibi Kapat)</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
 
 <div class="two">
   <div class="card">
     <h2>Genel Bilgiler</h2>
     <div class="kv">
       <div>Sorumlu emlakçı</div><div>{{ agent.name if agent else '-' }}</div>
-      <div>Ev sahibi</div><div>{{ p.landlord_name or '-' }} {{ p.landlord_phone or '' }}</div>
-      <div>Kiracı</div><div>{{ p.tenant_name or '-' }} {{ p.tenant_phone or '' }}</div>
+      <div>Ev sahibi</div><div>{{ p.landlord_name or '-' }} {% if p.landlord_phone %}<b>{{ p.landlord_phone }}</b>{% endif %}</div>
+      <div>Kiracı</div><div>{{ p.tenant_name or '-' }} {% if p.tenant_phone %}<b>{{ p.tenant_phone }}</b>{% endif %}</div>
       <div>Mevcut kira</div><div><b>{{ p.rent|money }}</b></div>
       <div>Yenileme</div><div class="{{ 'bad' if days < 0 else ('warn' if days <= 30 else '') }}"><b>{{ p.renewal_date|tdate }}</b> ({{ days if days >= 0 else -days }} gün {{ 'kaldı' if days >= 0 else 'geçti' }})</div>
       <div>Geçen sene artış</div><div>{{ p.last_increase_pct|pct }}{% if p.last_increase_amount %} (+{{ p.last_increase_amount|money }}){% endif %}</div>

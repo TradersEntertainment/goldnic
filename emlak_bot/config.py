@@ -30,6 +30,10 @@ class Config:
     brand_name: str = "Gold Nicomedia"
     admin_username: str = ""
     admin_password: str = ""
+    whatsapp_token: str = ""
+    whatsapp_phone_number_id: str = ""
+    whatsapp_api_url: str = ""
+    whatsapp_target_phone: str = ""
 
 
 def load_config() -> Config:
@@ -75,4 +79,8 @@ def load_config() -> Config:
         brand_name=os.getenv("BRAND_NAME", "Gold Nicomedia").strip() or "Gold Nicomedia",
         admin_username=os.getenv("ADMIN_USERNAME", "").strip().lower(),
         admin_password=os.getenv("ADMIN_PASSWORD", "").strip(),
+        whatsapp_token=os.getenv("WHATSAPP_TOKEN", "").strip(),
+        whatsapp_phone_number_id=os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip(),
+        whatsapp_api_url=os.getenv("WHATSAPP_API_URL", "").strip(),
+        whatsapp_target_phone=os.getenv("WHATSAPP_TARGET_PHONE", os.getenv("WHATSAPP_PHONE", "")).strip(),
     )

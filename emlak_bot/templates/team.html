@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Ekip ve Kullanıcı Yönetimi — {{ brand }}{% endblock %}
+
+{% block body %}
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+  <div>
+    <h1 style="margin:0">👥 Ekip ve Kullanıcı Yönetimi</h1>
+    <span class="mute">Danışman hesapları, şifreleri ve portföy görünürlük yetkileri</span>
+  </div>
+  <div>
+    <a href="{{ url_for('dashboard') }}" class="btn alt" style="margin:0">← Panele Dön</a>
+  </div>
+</div>
+
+<div class="two">
+  <!-- YENİ KULLANICI EKLEME KARTI -->
+  <div class="card">
+    <h2>+ Yeni Danışman / Kullanıcı Ekle</h2>
+    <p class="mute" style="font-size:13px;margin-top:0">
+      Ofise yeni katılan bir emlakçıyı ekleyebilir veya mevcut bir danışmana giriş şifresi verebilirsiniz.
+    </p>
+
+    <form method="post" action="{{ url_for('team_add') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+
+      <label for="new_name">Ad Soyad (Sahibinden Danışman İsmi): *</label>
+      <input type="text" name="name" id="new_name" placeholder="Örn: Burkay Yıldırım" required>
+
+      <div class="two" style="margin-top:8px">
+        <div>
+          <label for="new_username">Giriş Kullanıcı Adı: *</label>
+          <input type="text" name="username" id="new_username" placeholder="Örn: burkayy" required>
+        </div>
+        <div>
+          <label for="new_password">Şifre (En az 8 karakter): *</label>
+          <input type="password" name="password" id="new_password" required minlength="8" placeholder="••••••••">
+        </div>
+      </div>
+
+      <div class="two" style="margin-top:8px">
+        <div>
+          <label for="new_role">Kullanıcı Rolü:</label>
+          <select name="role" id="new_role">
+            <option value="agent" selected>Danışman (Emlakçı)</option>
+            <option value="owner">Yönetici (Ofis Sahibi)</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;margin-top:24px">
+          <label style="font-weight:normal;display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" name="can_see_all" value="1" style="width:auto">
+            <span>Tüm ilanları ve mülkleri görebilsin</span>
+          </label>
+        </div>
+      </div>
+
+      <div style="background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:8px 12px;margin-top:10px;font-size:12px;color:var(--mute)">
+        💡 <b>Not:</b> Kutu işaretlenmezse danışman <b>sadece kendi adına kayıtlı ilan ve mülkleri</b> görür. Kendisine ait özel notları diğer emlakçılar okuyamaz.
+      </div>
+
+      <button type="submit" class="btn ok" style="margin-top:14px;width:100%">Kullanıcıyı Kaydet</button>
+    </form>
+  </div>
+
+  <!-- BİLGİLENDİRME & YETKİ ÖZETİ -->
+  <div class="card" style="background:#fdfdfe">
+    <h2>🔒 İlan ve Not Gizliliği</h2>
+    <div style="font-size:13px;line-height:1.6;color:#2c3e50">
+      <p>
+        <b>Gold Nicomedia Güvenlik Politikası:</b>
+      </p>
+      <ul>
+        <li><b>Diren Doğan (Yönetici):</b> Tüm ofisin kira takvimini, Sahibinden ilanlarını, kira artış oranlarını ve danışman aktivitelerini eksiksiz görür.</li>
+        <li><b>Danışmanlar (Varsayılan):</b> Sadece kendi ilanlarını ve portföyünü görür. Kendi mülklerine ekledikleri özel müşteri/mal sahibi notları diğer danışmanlara kapalıdır.</li>
+        <li><b>Özel İzin Verilenler:</b> Diren Doğan dilediği danışmana aşağıdaki listeden <b>"Tümünü Görme İzni"</b> verebilir.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- KULLANICI LİSTESİ -->
+<div class="card" style="margin-top:20px">
+  <h2>📋 Kayıtlı Ekip Üyeleri ({{ users|length }})</h2>
+  
+  <table>
+    <thead>
+      <tr>
+        <th>Ad Soyad & Kullanıcı Adı</th>
+        <th>Rol</th>
+        <th>Portföy (Mülk)</th>
+        <th>Sahibinden İlanı</th>
+        <th>İlan Görünürlük Yetkisi</th>
+        <th>Durum</th>
+        <th>Son Giriş</th>
+        <th>İşlemler</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr style="{% if not u.active %}opacity:0.6;background:#fbfbfb{% endif %}">
+        <td>
+          <strong>{{ u.name }}</strong>
+          {% if u.username %}
+          <br><small class="mute">@{{ u.username }}</small>
+          {% else %}
+          <br><small class="warn">Giriş hesabı tanımlanmamış</small>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.role == 'owner' %}
+          <span class="badge" style="background:#14213d;color:#fff;border:0">👑 Ofis Sahibi</span>
+          {% else %}
+          <span class="badge badge-agent">👤 Danışman</span>
+          {% endif %}
+        </td>
+        <td><b>{{ u.prop_count }}</b> mülk</td>
+        <td><b>{{ u.listing_count }}</b> ilan</td>
+        <td>
+          {% if u.role == 'owner' %}
+          <span class="mute">Tam Yetkili</span>
+          {% elif u.can_see_all %}
+          <span class="good" style="font-weight:600">🟢 Herkesi Görebilir</span>
+          <form method="post" action="{{ url_for('team_update_perm', uid=u.id) }}" style="display:inline;margin-left:6px">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="can_see_all" value="0">
+            <button type="submit" class="btn sm alt" title="Sadece kendi ilanlarına kısıtla">Kısıtla</button>
+          </form>
+          {% else %}
+          <span class="warn" style="font-weight:600">🔒 Sadece Kendi İlanları</span>
+          <form method="post" action="{{ url_for('team_update_perm', uid=u.id) }}" style="display:inline;margin-left:6px">
+            <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="can_see_all" value="1">
+            <button type="submit" class="btn sm ok" title="Tüm ilanları görme izni ver">İzin Ver</button>
+          </form>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.active %}
+          <span class="good">Aktif</span>
+          {% else %}
+          <span class="bad">Pasif</span>
+          {% endif %}
+        </td>
+        <td>
+          <small class="mute">{{ u.last_active[:16].replace('T', ' ') if u.last_active else 'Henüz girmedi' }}</small>
+        </td>
+        <td>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button type="button" class="btn sm alt" onclick="openPwdModal({{ u.id }}, '{{ u.name|escape }}')">
+              🔑 Şifre
+            </button>
+
+            {% if u.id != g.user.id %}
+            <form method="post" action="{{ url_for('team_toggle_status', uid=u.id) }}" style="display:inline">
+              <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+              {% if u.active %}
+              <button type="submit" class="btn sm danger" onclick="return confirm('Kullanıcı pasife alınsın mı? Giriş yapamayacaktır.')">
+                Durdur
+              </button>
+              {% else %}
+              <button type="submit" class="btn sm ok">
+                Aktifleştir
+              </button>
+              {% endif %}
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ŞİFRE DEĞİŞTİRME MODALI -->
+<div id="pwdModal" class="modal-overlay" onclick="if(event.target===this)closePwdModal()">
+  <div class="modal-box" style="max-width:440px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:10px">
+      <h2 style="margin:0">🔑 Şifre Sıfırla</h2>
+      <button type="button" onclick="closePwdModal()" style="background:none;border:0;font-size:22px;cursor:pointer;color:var(--mute)">&times;</button>
+    </div>
+
+    <form id="pwdForm" method="post" action="">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+
+      <div style="background:#f4f6f9;padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:13px">
+        Kullanıcı: <strong id="pwdModalName">-</strong>
+      </div>
+
+      <label for="new_password_input">Yeni Şifre (En az 8 karakter): *</label>
+      <input type="password" name="new_password" id="new_password_input" required minlength="8" placeholder="••••••••">
+
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button type="submit" class="btn ok" style="flex:1">Şifreyi Güncelle</button>
+        <button type="button" class="btn alt" onclick="closePwdModal()">Vazgeç</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openPwdModal(uid, name) {
+  document.getElementById('pwdForm').action = '/ekip/' + uid + '/sifre';
+  document.getElementById('pwdModalName').textContent = name;
+  document.getElementById('new_password_input').value = '';
+  document.getElementById('pwdModal').classList.add('active');
+}
+function closePwdModal() {
+  document.getElementById('pwdModal').classList.remove('active');
+}
+</script>
+{% endblock %}

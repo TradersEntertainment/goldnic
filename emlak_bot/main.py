@@ -59,9 +59,29 @@ def main() -> None:
 
     if not cfg.bot_token:
         logging.getLogger("emlak_bot").warning(
-            "TELEGRAM_BOT_TOKEN tanımlı değil. Telegram botu başlatılmadı, sadece web paneli çalışıyor."
+            "TELEGRAM_BOT_TOKEN tanımlı değil. Web paneli ve WhatsApp hatırlatma servisi çalışıyor."
         )
+        import asyncio
         import time as _t
+        from datetime import datetime
+
+        def _reminder_loop():
+            _t.sleep(20)  # başlangıçta sistemin açılmasını bekle
+            last_run_day = None
+            while True:
+                try:
+                    now = datetime.now()
+                    if now.day != last_run_day and now.hour >= cfg.reminder_hour:
+                        logging.getLogger("emlak_bot").info("Zamanlanmış hatırlatmalar kontrol ediliyor...")
+                        asyncio.run(daily_job(db, messenger=None, inactivity_days=cfg.inactivity_days, cfg=cfg))
+                        last_run_day = now.day
+                except Exception as ex:
+                    logging.getLogger("emlak_bot").warning("Hatırlatma döngüsü hatası: %s", ex)
+                _t.sleep(300)
+
+        t_rem = threading.Thread(target=_reminder_loop, name="reminders", daemon=True)
+        t_rem.start()
+
         try:
             while True:
                 _t.sleep(3600)
@@ -77,7 +97,7 @@ def main() -> None:
     target_chat = cfg.chat_id or cfg.group_chat_id or None
 
     async def job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        await daily_job(db, messenger, cfg.inactivity_days, target_chat)
+        await daily_job(db, messenger, cfg.inactivity_days, target_chat, cfg=cfg)
 
     app.job_queue.run_daily(job, time=time(cfg.reminder_hour, 0, tzinfo=cfg.tz), name="daily")
     app.job_queue.run_once(job, when=15, name="startup-catchup")

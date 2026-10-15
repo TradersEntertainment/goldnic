@@ -248,3 +248,86 @@ def test_vacant_and_new_tenant_lifecycle(tmp_db):
     assert reactivated["tenant_name"] == "Yeni Kiracı Ali"
     assert reactivated["rent"] == 32000.0
     assert reactivated["renewal_date"] == "2027-11-01"
+
+
+def test_agent_visibility_and_owner_user_management(tmp_db):
+    from werkzeug.security import generate_password_hash
+    from zoneinfo import ZoneInfo
+
+    seed_initial_listings(tmp_db)
+    owner_id = tmp_db.seed_admin("direndogann", "SertSifre123!")
+
+    # Danışman 1 (Burkay Yıldırım, can_see_all=0)
+    a1_id = tmp_db.create_or_update_agent(
+        name="Burkay Yıldırım",
+        username="burkayy",
+        password_hash=generate_password_hash("Burkay123!"),
+        role="agent",
+        can_see_all=0,
+    )
+
+    # Danışman 2 (Ecenaz Öztekin, can_see_all=1)
+    a2_id = tmp_db.create_or_update_agent(
+        name="Ecenaz Öztekin",
+        username="ecenazo",
+        password_hash=generate_password_hash("Ecenaz123!"),
+        role="agent",
+        can_see_all=1,
+    )
+
+    cfg = Config(
+        bot_token="",
+        owner_ids=frozenset({owner_id}),
+        db_path=tmp_db.path,
+        tz=ZoneInfo("Europe/Istanbul"),
+        reminder_hour=9,
+        inactivity_days=7,
+        secret_key="test-secret",
+        port=8000,
+        web_enabled=True,
+        cookie_secure=False,
+        web_url="",
+        brand_name="Gold Nicomedia Test",
+    )
+    app = create_app(tmp_db, cfg)
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    # 1. Burkay Yıldırım (can_see_all=0) giriş yapıyor
+    with client.session_transaction() as sess:
+        sess["csrf"] = "csrf1"
+    client.post("/login", data={"username": "burkayy", "password": "Burkay123!", "csrf": "csrf1"})
+
+    resp_burkay = client.get("/ilanlar")
+    assert resp_burkay.status_code == 200
+    html_b = resp_burkay.get_data(as_text=True)
+    assert "Kişisel Portföyünüz" in html_b
+    assert "Burkay Yıldırım" in html_b
+
+    # Burkay /ekip sayfasına erişemez (403)
+    resp_ekip_fail = client.get("/ekip")
+    assert resp_ekip_fail.status_code == 403
+
+    # 2. Diren Doğan (owner) giriş yapıyor
+    with client.session_transaction() as sess:
+        sess.clear()
+        sess["csrf"] = "csrf2"
+    client.post("/login", data={"username": "direndogann", "password": "SertSifre123!", "csrf": "csrf2"})
+
+    # Diren Doğan /ekip sayfasına erişebilir
+    resp_ekip = client.get("/ekip")
+    assert resp_ekip.status_code == 200
+    assert "Ekip ve Kullanıcı Yönetimi" in resp_ekip.get_data(as_text=True)
+
+    # Diren Doğan Burkay'a tümünü görme izni veriyor
+    with client.session_transaction() as sess:
+        csrf_owner = sess.get("csrf")
+    perm_resp = client.post(
+        f"/ekip/{a1_id}/yetki",
+        data={"csrf": csrf_owner, "can_see_all": "1", "role": "agent"},
+        follow_redirects=True,
+    )
+    assert perm_resp.status_code == 200
+
+    u_burkay = tmp_db.get_user(a1_id)
+    assert u_burkay["can_see_all"] == 1

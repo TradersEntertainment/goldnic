@@ -42,9 +42,12 @@ def test_calc_and_format():
 def test_pick_stage():
     assert R.pick_stage(45) is None
     assert R.pick_stage(30) == 30
-    assert R.pick_stage(20) == 30
-    assert R.pick_stage(10) == 15
-    assert R.pick_stage(7) == 7
+    assert R.pick_stage(20) == 23
+    assert R.pick_stage(15) == 16
+    assert R.pick_stage(10) == 11
+    assert R.pick_stage(7) == 8
+    assert R.pick_stage(4) == 5
+    assert R.pick_stage(1) == 2
     assert R.pick_stage(0) == 0
     assert R.pick_stage(-3) == -1
     assert R.pick_stage(-100) is None

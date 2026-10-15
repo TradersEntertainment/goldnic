@@ -42,6 +42,100 @@ def validate_password(p: str) -> str:
     return p
 
 
+def parse_tabular_input(raw_text: str) -> list[dict]:
+    """Excel'den kopyalanan (tab-separated) veya CSV formatındaki metni mülk sözlüklerine çevirir."""
+    import csv
+    import io
+
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    if not lines:
+        return []
+
+    first_line = lines[0]
+    if "\t" in first_line:
+        delimiter = "\t"
+    elif ";" in first_line:
+        delimiter = ";"
+    elif "," in first_line:
+        delimiter = ","
+    else:
+        delimiter = "\t"
+
+    reader = csv.reader(io.StringIO(raw_text.strip()), delimiter=delimiter)
+    raw_rows = [r for r in reader if any(cell.strip() for cell in r)]
+    if not raw_rows:
+        return []
+
+    first_row = [c.strip().lower() for c in raw_rows[0]]
+    header_keywords = {
+        "başlık", "baslik", "daire no", "daire adı", "daire adi", "kira", "tutar", "tarih",
+        "yenileme", "kiracı", "kiraci", "ev sahibi", "telefon", "danışman", "danisman", "notlar", "açıklama",
+    }
+    is_second_cell_number = False
+    if len(first_row) >= 2:
+        clean_num = first_row[1].replace(".", "").replace(",", "").replace(" ", "").replace("tl", "").replace("₺", "")
+        if clean_num.isdigit():
+            is_second_cell_number = True
+
+    match_count = sum(1 for c in first_row if any(k in c for k in header_keywords))
+    has_header = (not is_second_cell_number) and (
+        match_count >= 2 or (match_count >= 1 and first_row[0] in ("başlık", "baslik", "daire", "mülk", "adres"))
+    )
+    headers = first_row if has_header else []
+    data_rows = raw_rows[1:] if has_header else raw_rows
+
+    results = []
+    for r in data_rows:
+        cells = [c.strip() for c in r]
+        if not cells or not any(cells):
+            continue
+
+        item: dict[str, str] = {}
+        if has_header:
+            for h, val in zip(headers, cells):
+                if any(x in h for x in ("kiracı tel", "kiraci tel", "kiracı telefon", "kiraci telefon", "kiraci_tel")):
+                    item["tenant_phone"] = val
+                elif any(x in h for x in ("ev sahibi tel", "sahip tel", "malik tel", "ev sahibi telefon", "ev_sahibi_tel")):
+                    item["landlord_phone"] = val
+                elif any(x in h for x in ("kiracı", "kiraci", "tenant")):
+                    item["tenant_name"] = val
+                elif any(x in h for x in ("ev sahibi", "sahip", "malik", "landlord")):
+                    item["landlord_name"] = val
+                elif any(x in h for x in ("başlık", "baslik", "daire", "mülk", "adres", "ilan", "title")):
+                    item["title"] = val
+                elif any(x in h for x in ("tarih", "yenileme", "kontrat", "vade", "donem", "dönem", "date")):
+                    item["renewal_date"] = val
+                elif any(x in h for x in ("kira", "tutar", "bedel", "fiyat", "rent")):
+                    item["rent"] = val
+                elif any(x in h for x in ("danışman", "danisman", "emlakçı", "temsilci", "consultant")):
+                    item["consultant"] = val
+                elif any(x in h for x in ("not", "açıklama", "aciklama", "bilgi", "notes")):
+                    item["notes"] = val
+
+        if "title" not in item and len(cells) >= 1:
+            item["title"] = cells[0]
+        if "rent" not in item and len(cells) >= 2:
+            item["rent"] = cells[1]
+        if "renewal_date" not in item and len(cells) >= 3:
+            item["renewal_date"] = cells[2]
+        if "tenant_name" not in item and len(cells) >= 4:
+            item["tenant_name"] = cells[3]
+        if "tenant_phone" not in item and len(cells) >= 5:
+            item["tenant_phone"] = cells[4]
+        if "landlord_name" not in item and len(cells) >= 6:
+            item["landlord_name"] = cells[5]
+        if "landlord_phone" not in item and len(cells) >= 7:
+            item["landlord_phone"] = cells[6]
+        if "consultant" not in item and len(cells) >= 8:
+            item["consultant"] = cells[7]
+        if "notes" not in item and len(cells) >= 9:
+            item["notes"] = cells[8]
+
+        results.append(item)
+
+    return results
+
+
 def create_app(db: Database, cfg: Config) -> Flask:
     from .scraper import seed_initial_listings, sync_listings_data
 
@@ -156,7 +250,8 @@ def create_app(db: Database, cfg: Config) -> Flask:
         p = db.get_property(pid)
         if p is None or p["status"] not in ("active", "vacant"):
             abort(404)
-        if g.user["role"] != "owner" and p["agent_id"] != g.user["id"]:
+        can_view_all = g.user["role"] == "owner" or bool(dict(g.user).get("can_see_all"))
+        if not can_view_all and p["agent_id"] != g.user["id"]:
             abort(403)
         return p
 
@@ -216,17 +311,39 @@ def create_app(db: Database, cfg: Config) -> Flask:
     @login_required()
     def dashboard():
         owner = g.user["role"] == "owner"
-        only = request.args.get("agent", type=int) if owner else g.user["id"]
+        can_view_all = owner or bool(dict(g.user).get("can_see_all"))
+        only = request.args.get("agent", type=int) if can_view_all else g.user["id"]
         props = db.list_properties(only)
+        vacant_props = db.list_properties(only, status="vacant")
         names = {u["id"]: u["name"] for u in db.list_users(active_only=False)}
         t = today()
-        rows = [dict(p, days=texts.days_left(p, t), agent=names.get(p["agent_id"], "?")) for p in props]
+
+        from .whatsapp import build_tenant_message, get_whatsapp_chat_url
+
+        rows = []
+        for p in props:
+            days = texts.days_left(p, t)
+            agent_name = names.get(p["agent_id"], "?")
+            is_acked = db.is_reminder_acked(p["id"], p["renewal_date"])
+            wa_url = ""
+            if p["tenant_phone"]:
+                wa_msg = build_tenant_message(
+                    title=p["title"],
+                    renewal_date_str=R.fmt_date(p["renewal_date"]),
+                    days_left=days,
+                    agent_name=agent_name,
+                    brand=cfg.brand_name,
+                )
+                wa_url = get_whatsapp_chat_url(p["tenant_phone"], wa_msg)
+            rows.append(dict(p, days=days, agent=agent_name, is_acked=is_acked, wa_url=wa_url))
+
         stats = {
             "total": len(rows),
             "soon": sum(1 for r in rows if 0 <= r["days"] <= 30),
             "overdue": sum(1 for r in rows if r["days"] < 0),
             "missing": sum(1 for r in rows if r["days"] <= 30 and r["planned_rent"] is None),
             "rent": sum(r["rent"] for r in rows),
+            "vacant": len(vacant_props),
         }
         team, inactive = [], []
         if owner:
@@ -235,8 +352,16 @@ def create_app(db: Database, cfg: Config) -> Flask:
                 team.append(dict(u, count=len(mine), soon=sum(
                     1 for p in mine if 0 <= texts.days_left(p, t) <= 30)))
             inactive = collect_issues(db, t, cfg.inactivity_days)["inactive"]
-        return render_template("dashboard.html", rows=rows, stats=stats, team=team,
-                               inactive=inactive, owner=owner, only=only)
+        return render_template(
+            "dashboard.html",
+            rows=rows,
+            stats=stats,
+            team=team,
+            inactive=inactive,
+            owner=owner,
+            can_view_all=can_view_all,
+            only=only,
+        )
 
     @app.get("/mulk/<int:pid>")
     @login_required()
@@ -245,10 +370,58 @@ def create_app(db: Database, cfg: Config) -> Flask:
         tufe = get_tufe(db)
         cap = R.apply_pct(p["rent"], tufe) if tufe is not None else None
         agent = db.get_user(p["agent_id"])
+        days = texts.days_left(p, today())
+
+        from .whatsapp import build_tenant_message, get_whatsapp_chat_url
+
+        wa_tenant_url = ""
+        if p["tenant_phone"]:
+            t_msg = build_tenant_message(
+                title=p["title"],
+                renewal_date_str=R.fmt_date(p["renewal_date"]),
+                days_left=days,
+                agent_name=agent["name"] if agent else cfg.brand_name,
+                brand=cfg.brand_name,
+            )
+            wa_tenant_url = get_whatsapp_chat_url(p["tenant_phone"], t_msg)
+
+        wa_landlord_url = ""
+        if p["landlord_phone"]:
+            l_msg = (
+                f"Sayın Mülk Sahibimiz,\n\n"
+                f"{cfg.brand_name} Gayrimenkul'den {agent['name'] if agent else ''}. "
+                f"'{p['title']}' mülkünüzün kira yenileme tarihi {R.fmt_date(p['renewal_date'])} tarihinde dolmaktadır. "
+                f"Yeni dönem kira artış oranı ve güncel piyasa değerlendirmesi için sizinle görüşmek isteriz.\n\n"
+                f"İyi çalışmalar dileriz."
+            )
+            wa_landlord_url = get_whatsapp_chat_url(p["landlord_phone"], l_msg)
+
+        is_acked = db.is_reminder_acked(pid, p["renewal_date"])
+
         return render_template(
-            "property.html", p=p, days=texts.days_left(p, today()), agent=agent,
-            hist=db.history(pid), tufe=tufe, cap=cap,
-            over_cap=tufe is not None and p["planned_pct"] is not None and p["planned_pct"] > tufe)
+            "property.html",
+            p=p,
+            days=days,
+            agent=agent,
+            hist=db.history(pid),
+            tufe=tufe,
+            cap=cap,
+            wa_tenant_url=wa_tenant_url,
+            wa_landlord_url=wa_landlord_url,
+            is_acked=is_acked,
+            over_cap=tufe is not None and p["planned_pct"] is not None and p["planned_pct"] > tufe,
+        )
+
+    @app.post("/mulk/<int:pid>/aradim")
+    @login_required()
+    def property_aradim(pid: int):
+        p = get_prop(pid)
+        notes = request.form.get("notes", "").strip() or "Müşteri arandı / görüşüldü."
+        db.ack_reminders(pid, p["renewal_date"], notes=notes)
+        db.log(g.user["id"], "aradim", pid, f"{p['renewal_date']} dönemi için arandı. Not: {notes}")
+        flash("📞 Müşteri arandı olarak kaydedildi. Bu yenileme dönemi için bildirim takibi tamamlandı.", "ok")
+        next_url = request.form.get("next") or request.referrer or url_for("property_view", pid=pid)
+        return redirect(next_url)
 
     @app.post("/mulk/<int:pid>/zam")
     @login_required()
@@ -308,11 +481,196 @@ def create_app(db: Database, cfg: Config) -> Flask:
         uid = request.args.get("user", type=int)
         return render_template("activity.html", rows=db.recent_activity(uid, 100))
 
+    # ------------------------------------------------------------ ekip / kullanıcı yönetimi
+    @app.get("/ekip")
+    @login_required(owner_only=True)
+    def team_view():
+        users = db.list_users(active_only=False)
+        user_list = []
+        for u in users:
+            props = db.list_properties(u["id"])
+            sh_listings = db.list_sahibinden_listings(consultant=u["name"], status="all")
+            user_list.append(dict(u, prop_count=len(props), listing_count=len(sh_listings)))
+        return render_template("team.html", users=user_list)
+
+    @app.post("/ekip/ekle")
+    @login_required(owner_only=True)
+    def team_add():
+        name = request.form.get("name", "").strip()
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        role = request.form.get("role", "agent").strip()
+        can_see_all = 1 if request.form.get("can_see_all") else 0
+
+        try:
+            if not name:
+                raise ValueError("İsim alanı boş bırakılamaz.")
+            u_clean = validate_username(username)
+            p_clean = validate_password(password)
+            pwd_hash = generate_password_hash(p_clean)
+            uid = db.create_or_update_agent(name, u_clean, pwd_hash, role, can_see_all)
+            db.log(
+                g.user["id"],
+                "kullanici_ekledi",
+                uid,
+                f"{name} ({u_clean}) - Yetki: {'Tüm portföy' if can_see_all else 'Sadece kendi'}",
+            )
+            flash(f"'{name}' ({u_clean}) başarıyla kaydedildi.", "ok")
+        except ValueError as e:
+            flash(str(e), "err")
+        return redirect(url_for("team_view"))
+
+    @app.post("/ekip/<int:uid>/yetki")
+    @login_required(owner_only=True)
+    def team_update_perm(uid: int):
+        target = db.get_user(uid)
+        if not target:
+            abort(404)
+        can_see_all = 1 if request.form.get("can_see_all") else 0
+        role = request.form.get("role", target["role"])
+        db.update_user_permission(uid, can_see_all, role)
+        db.log(g.user["id"], "yetki_guncelledi", uid, f"Rol: {role}, Tümünü Görme: {can_see_all}")
+        flash(f"'{target['name']}' yetkileri güncellendi.", "ok")
+        return redirect(url_for("team_view"))
+
+    @app.post("/ekip/<int:uid>/sifre")
+    @login_required(owner_only=True)
+    def team_reset_password(uid: int):
+        target = db.get_user(uid)
+        if not target:
+            abort(404)
+        new_pwd = request.form.get("new_password", "")
+        try:
+            p_clean = validate_password(new_pwd)
+            db.set_credentials(uid, None, generate_password_hash(p_clean))
+            db.log(g.user["id"], "sifre_sifirladi", uid, f"Kullanıcı: {target['name']}")
+            flash(f"'{target['name']}' şifresi başarıyla güncellendi.", "ok")
+        except ValueError as e:
+            flash(str(e), "err")
+        return redirect(url_for("team_view"))
+
+    @app.post("/ekip/<int:uid>/durum")
+    @login_required(owner_only=True)
+    def team_toggle_status(uid: int):
+        target = db.get_user(uid)
+        if not target:
+            abort(404)
+        if target["id"] == g.user["id"]:
+            flash("Kendi hesabınızı pasife alamazsınız.", "err")
+            return redirect(url_for("team_view"))
+        new_status = 0 if target["active"] else 1
+        db.set_user_active(uid, new_status)
+        db.log(g.user["id"], "kullanici_durum_degisti", uid, f"Yeni durum: {new_status}")
+        flash(f"'{target['name']}' hesabı {'aktife' if new_status else 'pasife'} alındı.", "ok")
+        return redirect(url_for("team_view"))
+
+    @app.post("/ekip/<int:uid>/devret")
+    @login_required(owner_only=True)
+    def team_transfer_properties(uid: int):
+        target = db.get_user(uid)
+        if not target:
+            abort(404)
+        to_user = request.form.get("to_user", type=int) or g.user["id"]
+        count = db.transfer_properties(uid, to_user)
+        db.deactivate_user(uid)
+        to_u = db.get_user(to_user)
+        db.log(g.user["id"], "mulk_devretti", uid, f"{count} mülk -> {to_u['name']}")
+        flash(f"'{target['name']}' üzerindeki {count} mülk '{to_u['name']}' kullanıcısına devredildi ve kullanıcı pasife alındı.", "ok")
+        return redirect(url_for("team_view"))
+
+    # ------------------------------------------------------------ toplu giriş (sadece Diren Doğan)
+    @app.route("/toplu-giris", methods=["GET", "POST"])
+    @login_required(owner_only=True)
+    def bulk_import():
+        if request.method == "POST":
+            mode = request.form.get("mode", "paste")
+            items = []
+            if mode == "paste":
+                raw_text = request.form.get("paste_data", "").strip()
+                if not raw_text:
+                    flash("Lütfen yapıştırılacak veri girin.", "err")
+                    return redirect(url_for("bulk_import"))
+                items = parse_tabular_input(raw_text)
+            elif mode == "file":
+                uploaded_file = request.files.get("csv_file")
+                if not uploaded_file or not uploaded_file.filename:
+                    flash("Lütfen bir CSV dosyası seçin.", "err")
+                    return redirect(url_for("bulk_import"))
+                try:
+                    content = uploaded_file.read().decode("utf-8-sig")
+                except UnicodeDecodeError:
+                    uploaded_file.seek(0)
+                    content = uploaded_file.read().decode("cp1254", errors="replace")
+                items = parse_tabular_input(content)
+            elif mode == "quick_add":
+                title = request.form.get("title", "").strip()
+                rent = request.form.get("rent", "").strip()
+                renewal_date = request.form.get("renewal_date", "").strip()
+                if not title or not rent or not renewal_date:
+                    flash("Daire başlığı, kira tutarı ve yenileme tarihi zorunludur.", "err")
+                    return redirect(url_for("bulk_import"))
+                items = [{
+                    "title": title,
+                    "rent": rent,
+                    "renewal_date": renewal_date,
+                    "tenant_name": request.form.get("tenant_name", "").strip(),
+                    "tenant_phone": request.form.get("tenant_phone", "").strip(),
+                    "landlord_name": request.form.get("landlord_name", "").strip(),
+                    "landlord_phone": request.form.get("landlord_phone", "").strip(),
+                    "consultant": request.form.get("consultant", "").strip(),
+                    "notes": request.form.get("notes", "").strip(),
+                }]
+
+            if not items:
+                flash("İçe aktarılacak satır bulunamadı. Lütfen formatı veya sütunları kontrol edin.", "err")
+                return redirect(url_for("bulk_import"))
+
+            assigned_agent_id = request.form.get("agent_id", type=int) or g.user["id"]
+            success_count, errors = db.bulk_add_properties(items, default_agent_id=assigned_agent_id)
+            if success_count > 0:
+                db.log(g.user["id"], "toplu_giris", None, f"{success_count} adet mülk toplu eklendi.")
+                notify_owners(f"📥 {texts.esc(g.user['name'])}, {success_count} adet kiralık mülkü sisteme toplu aktardı.")
+                flash(f"🎉 Tebrikler! {success_count} adet kiralık portföy kaydı başarıyla oluşturuldu.", "ok")
+            if errors:
+                err_preview = "<br>• ".join(errors[:10])
+                if len(errors) > 10:
+                    err_preview += f"<br>...ve {len(errors) - 10} hata daha."
+                flash(f"⚠️ {len(errors)} satırda hata oluştu:<br>• {err_preview}", "err")
+
+            return redirect(url_for("bulk_import"))
+
+        # GET
+        agents = db.list_users(active_only=True)
+        total_props = len(db.list_properties())
+        return render_template("bulk_import.html", agents=agents, total_props=total_props)
+
+    @app.get("/toplu-giris/sablon-indir")
+    @login_required(owner_only=True)
+    def download_bulk_template():
+        from flask import Response
+        csv_content = (
+            "\ufeff"
+            "Daire / Başlık,Kira Tutarı,Yenileme Tarihi,Kiracı Adı,Kiracı Telefon,Ev Sahibi,Ev Sahibi Telefon,Danışman,Notlar\n"
+            "Yahya Kaptan 3+1 Daire,32000,15.11.2024,Ahmet Yılmaz,05321112233,Mehmet Demir,05423334455,Diren Doğan,1 yıllık standart kontrat\n"
+            "İzmit Merkez 2+1 Ara Kat,24000,01.12.2024,Ayşe Kaya,05051234567,Ali Veli,05559876543,Diren Doğan,Kira her ayın 1'i\n"
+            "Kartepe Müstakil Villa,75000,20.01.2025,Can Özkan,05339998877,Hasan Çelik,05301119988,Diren Doğan,Yıllık peşin ödendi\n"
+        )
+        return Response(
+            csv_content,
+            mimetype="text/csv; charset=utf-8",
+            headers={"Content-Disposition": "attachment; filename=gold_nicomedia_kira_sablon.csv"},
+        )
+
     # ------------------------------------------------------------ sahibinden ilanları
     @app.get("/ilanlar")
     @login_required()
     def listings_view():
-        consultant = request.args.get("danisman") or None
+        can_view_all = g.user["role"] == "owner" or bool(dict(g.user).get("can_see_all"))
+        if can_view_all:
+            consultant = request.args.get("danisman") or None
+        else:
+            consultant = g.user["name"]
+
         listing_type = request.args.get("tur") or None
         search = request.args.get("q") or None
         status = request.args.get("durum") or "active"
@@ -323,7 +681,7 @@ def create_app(db: Database, cfg: Config) -> Flask:
             search=search,
             status=status,
         )
-        stats = db.get_sahibinden_stats()
+        stats = db.get_sahibinden_stats(consultant=consultant if not can_view_all else None)
         last_sync = db.get_setting("last_auto_sync")
         return render_template(
             "listings.html",
@@ -334,6 +692,7 @@ def create_app(db: Database, cfg: Config) -> Flask:
             selected_status=status,
             search_query=search or "",
             last_auto_sync=last_sync,
+            can_view_all=can_view_all,
             today_str=today().isoformat(),
             next_year_str=(today() + timedelta(days=365)).isoformat(),
         )

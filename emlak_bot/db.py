@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
     chat_id TEXT NOT NULL,
     name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('owner','agent')),
+    can_see_all INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     last_active TEXT,
@@ -43,6 +44,9 @@ CREATE TABLE IF NOT EXISTS properties (
     planned_rent REAL,
     notes TEXT,
     status TEXT NOT NULL DEFAULT 'active',
+    last_contacted_at TEXT,
+    last_contacted_due TEXT,
+    last_contacted_notes TEXT,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS rent_history (
@@ -109,6 +113,7 @@ EDITABLE_PROPERTY_COLUMNS = {
     "rent", "renewal_date", "last_increase_pct", "last_increase_amount",
     "planned_pct", "planned_rent", "notes", "status", "agent_id",
     "exit_date", "deposit_notes", "handover_notes",
+    "last_contacted_at", "last_contacted_due", "last_contacted_notes",
 }
 
 
@@ -127,8 +132,10 @@ class Database:
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username ON users(username)")
             if "password_hash" not in cols:
                 c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+            if "can_see_all" not in cols:
+                c.execute("ALTER TABLE users ADD COLUMN can_see_all INTEGER NOT NULL DEFAULT 0")
 
-            # Mülk tahliye / kiracı çıkışı sütunları
+            # Mülk tahliye / kiracı çıkışı ve arama sütunları
             p_cols = {r["name"] for r in c.execute("PRAGMA table_info(properties)")}
             if "exit_date" not in p_cols:
                 c.execute("ALTER TABLE properties ADD COLUMN exit_date TEXT")
@@ -136,6 +143,12 @@ class Database:
                 c.execute("ALTER TABLE properties ADD COLUMN deposit_notes TEXT")
             if "handover_notes" not in p_cols:
                 c.execute("ALTER TABLE properties ADD COLUMN handover_notes TEXT")
+            if "last_contacted_at" not in p_cols:
+                c.execute("ALTER TABLE properties ADD COLUMN last_contacted_at TEXT")
+            if "last_contacted_due" not in p_cols:
+                c.execute("ALTER TABLE properties ADD COLUMN last_contacted_due TEXT")
+            if "last_contacted_notes" not in p_cols:
+                c.execute("ALTER TABLE properties ADD COLUMN last_contacted_notes TEXT")
 
             # Sahibinden kiralama / işlem sütunları
             s_cols = {r["name"] for r in c.execute("PRAGMA table_info(sahibinden_listings)")}
@@ -221,15 +234,51 @@ class Database:
         pwd_hash = generate_password_hash(password)
         if u:
             self.execute(
-                "UPDATE users SET password_hash=?, role='owner', active=1 WHERE id=?",
+                "UPDATE users SET password_hash=?, role='owner', can_see_all=1, active=1 WHERE id=?",
                 (pwd_hash, u["id"]),
             )
             return u["id"]
         return self.execute(
-            "INSERT INTO users (channel, chat_id, name, role, active, created_at, username, password_hash) "
-            "VALUES (?, ?, ?, 'owner', 1, ?, ?, ?)",
+            "INSERT INTO users (channel, chat_id, name, role, can_see_all, active, created_at, username, password_hash) "
+            "VALUES (?, ?, ?, 'owner', 1, 1, ?, ?, ?)",
             ("web", username.lower(), name, now_iso(), username.lower(), pwd_hash),
         )
+
+    def create_or_update_agent(
+        self,
+        name: str,
+        username: str,
+        password_hash: str,
+        role: str = "agent",
+        can_see_all: int = 0,
+    ) -> int:
+        """Yeni danışman/kullanıcı ekler veya mevcut kullanıcıyı günceller."""
+        u = self.get_user_by_username(username)
+        if not u:
+            # İsme göre kontrol et (scraper tarafından açılmış olabilir)
+            u = self.one("SELECT * FROM users WHERE name=?", (name,))
+        if u:
+            self.execute(
+                "UPDATE users SET name=?, username=?, password_hash=?, role=?, can_see_all=?, active=1 WHERE id=?",
+                (name, username.lower(), password_hash, role, can_see_all, u["id"]),
+            )
+            return u["id"]
+        return self.execute(
+            "INSERT INTO users (channel, chat_id, name, role, can_see_all, active, created_at, username, password_hash) "
+            "VALUES ('web', ?, ?, ?, ?, 1, ?, ?, ?)",
+            (username.lower(), name, role, can_see_all, now_iso(), username.lower(), password_hash),
+        )
+
+    def update_user_permission(self, user_id: int, can_see_all: int, role: str | None = None) -> None:
+        """Kullanıcının herkesin ilanlarını görme yetkisini veya rolünü günceller."""
+        if role:
+            self.execute("UPDATE users SET can_see_all=?, role=? WHERE id=?", (can_see_all, role, user_id))
+        else:
+            self.execute("UPDATE users SET can_see_all=? WHERE id=?", (can_see_all, user_id))
+
+    def set_user_active(self, user_id: int, active: int) -> None:
+        """Kullanıcıyı aktif veya pasif yapar."""
+        self.execute("UPDATE users SET active=? WHERE id=?", (active, user_id))
 
     # ---- davetler ----
     def create_invite(self, created_by: int) -> str:
@@ -299,6 +348,19 @@ class Database:
             (pid, due, stage),
         ) is not None
 
+    def is_reminder_acked(self, pid: int, due: str) -> bool:
+        """Kullanıcı bu dönem için 'Müşteriyi Aradım' dedi mi / onayladı mı kontrol eder."""
+        row = self.one(
+            "SELECT 1 FROM reminder_log WHERE property_id=? AND due_date=? AND acked=1 LIMIT 1",
+            (pid, due),
+        )
+        if row:
+            return True
+        prop = self.one("SELECT last_contacted_due FROM properties WHERE id=?", (pid,))
+        if prop and prop["last_contacted_due"] == due:
+            return True
+        return False
+
     def mark_reminder(self, pid: int, due: str, stage: int) -> None:
         self.execute(
             "INSERT OR IGNORE INTO reminder_log (property_id, due_date, stage, sent_at)"
@@ -306,10 +368,88 @@ class Database:
             (pid, due, stage, now_iso()),
         )
 
-    def ack_reminders(self, pid: int, due: str) -> None:
+    def ack_reminders(self, pid: int, due: str, notes: str = "") -> None:
+        """Kullanıcının 'Müşteriyi Aradım' onayını kaydeder ve sonraki bildirimleri durdurur."""
         self.execute(
             "UPDATE reminder_log SET acked=1 WHERE property_id=? AND due_date=?", (pid, due)
         )
+        self.execute(
+            "INSERT OR IGNORE INTO reminder_log (property_id, due_date, stage, sent_at, acked)"
+            " VALUES (?, ?, 0, ?, 1)",
+            (pid, due, now_iso()),
+        )
+        now = now_iso()
+        self.execute(
+            "UPDATE properties SET last_contacted_at=?, last_contacted_due=?, last_contacted_notes=COALESCE(?, last_contacted_notes) WHERE id=?",
+            (now, due, notes if notes else None, pid),
+        )
+
+    def bulk_add_properties(
+        self, items: list[dict], default_agent_id: int
+    ) -> tuple[int, list[str]]:
+        """Toplu mülk/kira kontratı içe aktarır. (başarılı_sayı, hatalar_listesi) döner."""
+        from . import rent as R
+
+        agents = {u["name"].strip().lower(): u["id"] for u in self.list_users()}
+        success_count = 0
+        errors: list[str] = []
+
+        for idx, item in enumerate(items, 1):
+            title = str(item.get("title") or item.get("baslik") or item.get("daire") or "").strip()
+            if not title:
+                errors.append(f"Satır #{idx}: Başlık/Daire bilgisi boş olamaz.")
+                continue
+
+            raw_rent = str(item.get("rent") or item.get("kira") or item.get("tutar") or "").strip()
+            try:
+                rent = R.parse_amount(raw_rent)
+            except Exception as e:
+                errors.append(f"Satır #{idx} ({title}): Kira tutarı geçersiz ({raw_rent}): {e}")
+                continue
+
+            raw_date = str(
+                item.get("renewal_date")
+                or item.get("tarih")
+                or item.get("yenileme_tarihi")
+                or item.get("sozlesme_tarihi")
+                or ""
+            ).strip()
+            try:
+                dt = R.parse_date(raw_date)
+                renewal_date = dt.isoformat()
+            except Exception as e:
+                errors.append(f"Satır #{idx} ({title}): Tarih geçersiz ({raw_date}): {e}")
+                continue
+
+            # Danışman eşleme
+            agent_id = default_agent_id
+            consultant_name = str(item.get("consultant") or item.get("danisman") or "").strip().lower()
+            if consultant_name and consultant_name in agents:
+                agent_id = agents[consultant_name]
+
+            landlord_name = str(item.get("landlord_name") or item.get("ev_sahibi") or "").strip() or None
+            landlord_phone = str(item.get("landlord_phone") or item.get("ev_sahibi_tel") or "").strip() or None
+            tenant_name = str(item.get("tenant_name") or item.get("kiraci") or "").strip() or None
+            tenant_phone = str(item.get("tenant_phone") or item.get("kiraci_tel") or "").strip() or None
+            notes = str(item.get("notes") or item.get("notlar") or "").strip() or None
+
+            try:
+                self.add_property(
+                    agent_id=agent_id,
+                    title=title,
+                    landlord_name=landlord_name,
+                    landlord_phone=landlord_phone,
+                    tenant_name=tenant_name,
+                    tenant_phone=tenant_phone,
+                    rent=rent,
+                    renewal_date=renewal_date,
+                    notes=notes,
+                )
+                success_count += 1
+            except Exception as e:
+                errors.append(f"Satır #{idx} ({title}): Kayıt hatası: {e}")
+
+        return success_count, errors
 
     # ---- aktivite ----
     def log(self, user_id: int, action: str, property_id: int | None = None, detail: str = ""):
@@ -438,12 +578,23 @@ class Database:
     def get_sahibinden_listing(self, lid: int):
         return self.one("SELECT * FROM sahibinden_listings WHERE id=?", (lid,))
 
-    def get_sahibinden_stats(self) -> dict[str, Any]:
-        total = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='active'")["c"]
-        kiralik = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='active' AND listing_type='kiralik'")["c"]
-        satilik = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='active' AND listing_type='satilik'")["c"]
-        republished = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='active' AND republish_count > 1")["c"]
-        rented = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='rented'")["c"]
+    def get_sahibinden_stats(self, consultant: str | None = None) -> dict[str, Any]:
+        where = "WHERE status='active'"
+        params = [consultant] if consultant else []
+        if consultant:
+            where += " AND consultant_name=?"
+
+        total = self.one(f"SELECT COUNT(*) AS c FROM sahibinden_listings {where}", params)["c"]
+        kiralik = self.one(f"SELECT COUNT(*) AS c FROM sahibinden_listings {where} AND listing_type='kiralik'", params)["c"]
+        satilik = self.one(f"SELECT COUNT(*) AS c FROM sahibinden_listings {where} AND listing_type='satilik'", params)["c"]
+        republished = self.one(f"SELECT COUNT(*) AS c FROM sahibinden_listings {where} AND republish_count > 1", params)["c"]
+
+        r_where = "WHERE status='rented'"
+        r_params = [consultant] if consultant else []
+        if consultant:
+            r_where += " AND consultant_name=?"
+        rented = self.one(f"SELECT COUNT(*) AS c FROM sahibinden_listings {r_where}", r_params)["c"]
+
         consultants = self.query(
             "SELECT consultant_name AS name, consultant_phone AS phone, COUNT(*) AS count "
             "FROM sahibinden_listings WHERE status='active' GROUP BY consultant_name ORDER BY count DESC"

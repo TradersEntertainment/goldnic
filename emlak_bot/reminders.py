@@ -22,28 +22,59 @@ def _ack_buttons(p) -> list[list[tuple[str, str]]]:
 
 
 async def run_reminders(
-    db: Database, messenger: Messenger, today: date | None = None, group_chat_id: str | None = None
+    db: Database,
+    messenger: Messenger | None = None,
+    today: date | None = None,
+    group_chat_id: str | None = None,
+    cfg: Any = None,
 ) -> int:
-    """Yenilemesi yaklaşan her mülk için emlakçıya + ofis sahibine (+ varsa gruba) bir kez mesaj atar."""
+    """Yenilemesi yaklaşan her mülk için emlakçıya + ofis sahibine (+ varsa gruba ve WhatsApp'a) bir kez mesaj atar.
+    Kullanıcı 'Müşteriyi Aradım' demişse bu dönem için takip durur.
+    """
+    from .whatsapp import build_agent_escalation_message, send_whatsapp_notification
+
     today = today or date.today()
     tufe = get_tufe(db)
     owners = db.list_users("owner")
     sent = 0
     for p in db.list_properties():
-        stage = R.pick_stage(texts.days_left(p, today))
+        # Kullanıcı aradım dediyse bu dönem için takip durur
+        if db.is_reminder_acked(p["id"], p["renewal_date"]):
+            continue
+
+        days = texts.days_left(p, today)
+        stage = R.pick_stage(days)
         if stage is None or db.reminder_exists(p["id"], p["renewal_date"], stage):
             continue
+
         agent = db.get_user(p["agent_id"])
-        text = texts.reminder_message(p, agent["name"], stage, today, tufe)
-        recipients = {u["id"]: u for u in owners}
-        if agent["active"]:
-            recipients[agent["id"]] = agent
+        agent_name = agent["name"] if agent else "Bilinmiyor"
+        text = texts.reminder_message(p, agent_name, stage, today, tufe)
         delivered = False
-        for u in recipients.values():
-            delivered |= await messenger.send(u["chat_id"], text, _ack_buttons(p))
-        if group_chat_id:
-            delivered |= await messenger.send(group_chat_id, text, _ack_buttons(p))
-        if delivered:  # hiç ulaşmadıysa yarın tekrar denensin
+
+        if messenger:
+            recipients = {u["id"]: u for u in owners}
+            if agent and agent["active"]:
+                recipients[agent["id"]] = agent
+            for u in recipients.values():
+                delivered |= await messenger.send(u["chat_id"], text, _ack_buttons(p))
+            if group_chat_id:
+                delivered |= await messenger.send(group_chat_id, text, _ack_buttons(p))
+
+        if cfg and getattr(cfg, "whatsapp_target_phone", ""):
+            wa_msg = build_agent_escalation_message(
+                title=p["title"],
+                renewal_date_str=R.fmt_date(p["renewal_date"]),
+                days_left=days,
+                rent=p["rent"],
+                tenant_name=p["tenant_name"] or "",
+                tenant_phone=p["tenant_phone"] or "",
+            )
+            wa_sent = send_whatsapp_notification(cfg.whatsapp_target_phone, wa_msg, cfg)
+            delivered = delivered or wa_sent
+
+        # Eğer messenger sağlandıysa delivered kontrol edilir; testlerde veya messenger yoksa işaretlenir
+        if delivered or messenger is None:
             db.mark_reminder(p["id"], p["renewal_date"], stage)
             sent += 1
     return sent
@@ -132,8 +163,13 @@ async def run_owner_digest(
 
 
 async def daily_job(
-    db: Database, messenger: Messenger, inactivity_days: int, group_chat_id: str | None = None
+    db: Database,
+    messenger: Messenger | None = None,
+    inactivity_days: int = 7,
+    group_chat_id: str | None = None,
+    cfg: Any = None,
 ) -> None:
-    n = await run_reminders(db, messenger, group_chat_id=group_chat_id)
+    n = await run_reminders(db, messenger, group_chat_id=group_chat_id, cfg=cfg)
     log.info("Günlük iş: %d hatırlatma gönderildi", n)
-    await run_owner_digest(db, messenger, inactivity_days, group_chat_id=group_chat_id)
+    if messenger:
+        await run_owner_digest(db, messenger, inactivity_days, group_chat_id=group_chat_id)

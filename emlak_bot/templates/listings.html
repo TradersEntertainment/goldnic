@@ -66,7 +66,8 @@
       </a>
     </div>
 
-    <!-- Danışman Filtresi -->
+    {% if can_view_all %}
+    <!-- Danışman Filtresi (Yönetici veya Yetkili Danışmanlar) -->
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:600;color:var(--mute)">Danışman:</span>
       <a href="{{ url_for('listings_view', durum=selected_status, tur=selected_type, q=search_query) }}" 
@@ -80,6 +81,11 @@
       </a>
       {% endfor %}
     </div>
+    {% else %}
+    <div style="background:#f4f6f9;border:1px solid var(--line);border-radius:6px;padding:8px 12px;font-size:13px">
+      🔒 <b>Kişisel Portföyünüz:</b> Sadece size (<b>{{ g.user.name }}</b>) ait ilanları ve mülkleri görüntülüyorsunuz. Notlarınız gizlidir.
+    </div>
+    {% endif %}
 
     <!-- Tür ve Arama Çubuğu -->
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">

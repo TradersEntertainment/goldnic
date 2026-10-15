@@ -53,7 +53,10 @@ input,textarea,select{width:100%;padding:9px;border:1px solid #cfd6df;border-rad
 /* Modal */
 .modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center}
 .modal-overlay.active{display:flex}
-.modal-box{background:#fff;border-radius:12px;max-width:620px;width:92%;padding:20px;max-height:90vh;overflow-y:auto;box-shadow:0 12px 36px rgba(0,0,0,0.25)}
+/* WhatsApp ve Aksiyon Butonları */
+.btn-wa{background:#25d366;color:#fff !important;border:0;border-radius:7px;display:inline-flex;align-items:center;gap:6px;font-weight:600;text-decoration:none;padding:5px 12px;font-size:13px}
+.btn-wa:hover{background:#20bd5a;color:#fff !important}
+.badge-acked{background:#e6fcf5;color:#0ca678;border:1px solid #96f2d7;font-weight:700}
 </style>
 </head>
 <body>
@@ -63,7 +66,11 @@ input,textarea,select{width:100%;padding:9px;border:1px solid #cfd6df;border-rad
   <a href="{{ url_for('dashboard') }}">Kira Takibi</a>
   <a href="{{ url_for('listings_view') }}">İlan Portföyü</a>
   <a href="{{ url_for('add') }}">+ Mülk Ekle</a>
-  {% if g.user.role == 'owner' %}<a href="{{ url_for('activity') }}">Aktivite</a>{% endif %}
+  {% if g.user.role == 'owner' %}
+  <a href="{{ url_for('bulk_import') }}">📥 Toplu Giriş</a>
+  <a href="{{ url_for('team_view') }}">Ekip Yönetimi</a>
+  <a href="{{ url_for('activity') }}">Aktivite</a>
+  {% endif %}
   <span class="sp"></span>
   <a href="{{ url_for('account') }}">{{ g.user.name }}</a>
   <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button>Çıkış</button></form>

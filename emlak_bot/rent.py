@@ -4,8 +4,9 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 
-# Yenilemeye kaç gün kala hatırlatma gidecek
-STAGES = (30, 15, 7, 1, 0)
+# Yenilemeye kaç gün kala hatırlatma gidecek:
+# 1 ay kala ilk bildirim (30), onay yoksa haftalık (23, 16), son 2 hafta her 3 günde bir (14, 11, 8, 5, 2, 0)
+STAGES = (30, 23, 16, 14, 11, 8, 5, 2, 0)
 
 
 def parse_date(text: str) -> date:
