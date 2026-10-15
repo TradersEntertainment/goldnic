@@ -215,6 +215,7 @@
     if (!markUrl) return;
     const body = new FormData();
     body.append('csrf', csrf());
+    body.append('ajax', '1');
     fetch(markUrl, { method: 'POST', body, credentials: 'same-origin' })
       .then(() => {
         const card = b.closest('[data-match-card]');
@@ -225,6 +226,98 @@
       .catch(() => {});
     // bağlantı (href) normal şekilde yeni sekmede açılır
   });
+
+  // ------------------------------------------------------------ Talep havuzu: akıllı ayrıştırma önizlemesi
+  $$('textarea[data-demand-parse]').forEach((ta) => {
+    const box = $(ta.dataset.demandParse);
+    const nameEl = ta.dataset.fillName ? $(ta.dataset.fillName) : null;
+    const phoneEl = ta.dataset.fillPhone ? $(ta.dataset.fillPhone) : null;
+    let t = null;
+    let ctrl = null;
+    const autoFilled = { name: false, phone: false };
+    const run = () => {
+      const q = ta.value.trim();
+      if (!box) return;
+      if (q.length < 3) { box.textContent = ''; return; }
+      if (ctrl) ctrl.abort();
+      ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+      fetch(`/api/talepler/ayristir?q=${encodeURIComponent(q)}`, {
+        credentials: 'same-origin', headers: { Accept: 'application/json' }, signal: ctrl ? ctrl.signal : undefined,
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!data) return;
+          box.textContent = '';
+          (data.chips || []).forEach((c) => {
+            const b = document.createElement('span');
+            b.className = `badge ${c.cls || ''}`;
+            const NS = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(NS, 'svg');
+            svg.setAttribute('class', 'ic');
+            const use = document.createElementNS(NS, 'use');
+            use.setAttribute('href', `#i-${c.icon}`);
+            svg.appendChild(use);
+            b.appendChild(svg);
+            b.appendChild(document.createTextNode(c.text));
+            box.appendChild(b);
+          });
+          if (data.vague) {
+            const s = document.createElement('span');
+            s.className = 'mute';
+            s.textContent = 'İpucu: oda, bütçe veya bölge yazarsanız eşleştirme keskinleşir.';
+            box.appendChild(s);
+          }
+          // ad / telefon kutusu boşsa (veya daha önce otomatik dolduysa) metinden doldur
+          if (nameEl && data.name && (!nameEl.value || autoFilled.name)) { nameEl.value = data.name; autoFilled.name = true; }
+          if (phoneEl && data.phone && (!phoneEl.value || autoFilled.phone)) { phoneEl.value = data.phone; autoFilled.phone = true; }
+        })
+        .catch(() => {});
+    };
+    if (nameEl) nameEl.addEventListener('input', () => { autoFilled.name = false; });
+    if (phoneEl) phoneEl.addEventListener('input', () => { autoFilled.phone = false; });
+    ta.addEventListener('input', () => { clearTimeout(t); t = setTimeout(run, 220); });
+    if (ta.value.trim()) run();
+  });
+
+  // Ctrl/⌘+Enter (veya data-enter-submit ile yalnız Enter; Shift+Enter yeni satır) formu gönderir
+  document.addEventListener('keydown', (e) => {
+    const ta = e.target;
+    if (!ta || ta.tagName !== 'TEXTAREA' || e.key !== 'Enter' || e.isComposing) return;
+    const quick = ta.hasAttribute('data-enter-submit') && !e.shiftKey;
+    const ctrlEnter = ta.hasAttribute('data-ctrl-enter') && (e.ctrlKey || e.metaKey);
+    if (!quick && !ctrlEnter) return;
+    e.preventDefault();
+    if (ta.form) { if (typeof ta.form.requestSubmit === 'function') ta.form.requestSubmit(); else ta.form.submit(); }
+  });
+
+  // Öneri çipine tıklayınca değeri hedef kutuya ekle ("Yahya Kaptan, Alikahya")
+  document.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-append-to]');
+    if (!chip) return;
+    e.preventDefault();
+    const inp = $(chip.dataset.appendTo);
+    if (!inp) return;
+    const val = chip.dataset.value || chip.textContent.trim();
+    const parts = inp.value.split(',').map((x) => x.trim()).filter(Boolean);
+    if (!parts.some((p) => norm(p) === norm(val))) parts.push(val);
+    inp.value = parts.join(', ');
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
+  // <details> açma bağlantıları ve adres çubuğundaki #çapa ile açılış
+  const openDetails = (sel) => {
+    const d = sel && $(sel);
+    if (d && d.tagName === 'DETAILS') { d.open = true; setTimeout(() => d.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); }
+  };
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-open-details]');
+    if (a) { e.preventDefault(); openDetails(a.dataset.openDetails); history.replaceState(null, '', a.dataset.openDetails); }
+    // açık eşleşme menüsünü dışarı tıklayınca kapat
+    $$('details.mc-more[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
+  });
+  if (location.hash.length > 1) {
+    try { openDetails(`details${location.hash}`); } catch (_) { /* geçersiz seçici */ }
+  }
 
   // ------------------------------------------------------------ Spotlight (Ctrl/⌘ + K)
   const spot = $('#spotlight');

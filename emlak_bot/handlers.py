@@ -127,6 +127,10 @@ async def cmd_help(update: Update, ctx, user):
         "/tufe — güncel TÜFE referansını göster",
         "/hukuk — hukuk radarı: tahliye taahhüdü, 5. yıl tespit, 10. yıl tahliye",
         "",
+        "<b>Müşteri talepleri</b>",
+        "/talep Mehmet Bey 0532… 3+1 kiralık 30-35 bin Yahya Kaptan acil — talep ekle, portföyle anında eşleştir",
+        "/talepler — aktif talepler ve eşleşme sayıları",
+        "",
         "<b>Web paneli</b>",
         "/sifre kullaniciadi — web girişi için kullanıcı adı + şifre al",
         "/web — web paneli adresi",
@@ -508,6 +512,76 @@ async def cmd_hukuk(update: Update, ctx, user):
     await reply(update, legal.summary_text(_db(ctx), _today(ctx), scope))
 
 
+# ---------------------------------------------------------------- müşteri talepleri (Matching CRM)
+TALEP_USAGE = ("Kullanım: <code>/talep Mehmet Bey 0532 111 22 33 3+1 kiralık 30-35 bin Yahya Kaptan veya "
+               "Alikahya acil</code>\nAd, telefon, oda, bütçe, bölge ve aciliyet cümleden otomatik anlaşılır; "
+               "portföy anında taranır.")
+
+
+@registered()
+async def cmd_talep(update: Update, ctx, user):
+    from . import crm
+    from . import matching as M
+    from .whatsapp import get_whatsapp_chat_url
+
+    db, cfg = _db(ctx), _cfg(ctx)
+    text = " ".join(ctx.args or []).strip()
+    if not text:
+        await reply(update, TALEP_USAGE)
+        return
+    p = M.parse(text)
+    if not p.name:
+        await reply(update, "❌ Müşterinin adını yazın (ör. <code>/talep Ayşe Hanım 0533… 2+1 kiralık 25 bin</code>).")
+        return
+    if p.criteria.is_vague():
+        await reply(update, "❌ Müşterinin ne aradığını yazın: oda sayısı, bütçe veya bölge.\n" + TALEP_USAGE)
+        return
+    did = crm.create_demand(db, name=p.name, phone=p.phone, criteria=p.criteria, notes=text, source="Telegram",
+                            agent_id=user["id"], created_by=user["id"])
+    new = crm.refresh(db, _today(ctx), demand_ids=[did], silent=True)
+    lines = [f"✅ <b>Talep kaydedildi</b> (#{did}) — {texts.esc(p.name)}"
+             + (f" · {texts.esc(p.phone)}" if p.phone else ""),
+             f"🎯 {texts.esc(M.summary(p.criteria))}"]
+    if new:
+        lines.append(f"\n🔔 <b>{len(new)} uygun seçenek bulundu:</b>")
+        for nm in sorted(new, key=lambda x: -x.result.score)[:6]:
+            x = nm.candidate
+            line = f"• %{nm.result.score} — {texts.esc(x.title)} · {M.money_short(x.price)}"
+            if p.phone:
+                wa = get_whatsapp_chat_url(p.phone, M.whatsapp_text(p.name, x, user["name"], cfg.brand_name))
+                line += f' · <a href="{texts.esc(wa)}">WhatsApp\'tan gönder</a>'
+            lines.append(line)
+    else:
+        lines.append("Şu an uygun ilan yok. Yeni ilan veya boşalan daire geldiğinde anında haber vereceğim.")
+    if not p.phone:
+        lines.append("ℹ️ Telefon yazılmadı — tek tık WhatsApp için web panelinden ekleyin.")
+    if cfg.web_url:
+        lines.append(f'🔗 <a href="{cfg.web_url}/talep/{did}">Web panelinde aç</a>')
+    await reply(update, "\n".join(lines))
+
+
+@registered()
+async def cmd_talepler(update: Update, ctx, user):
+    from . import crm
+    from . import matching as M
+
+    db = _db(ctx)
+    scope = None if user["role"] == "owner" or user["can_see_all"] else user["id"]
+    rows = crm.list_demands(db, scope_agent=scope, status="active")
+    if not rows:
+        await reply(update, "Aktif müşteri talebi yok. Eklemek için:\n" + TALEP_USAGE)
+        return
+    lines = [f"🎯 <b>Aktif müşteri talepleri ({len(rows)})</b>"]
+    for r in rows[:40]:
+        urgent = "🔴 " if r["urgency"] == "acil" else ""
+        matches = f"{r['match_count']} eşleşme" + (f" ({r['new_count']} yeni)" if r["new_count"] else "")
+        lines.append(f"{urgent}#{r['id']} <b>{texts.esc(r['name'])}</b> — {texts.esc(M.summary(M.Criteria.from_row(r)))}"
+                     f" — {matches}" + (f" · {texts.esc(r['agent_name'])}" if scope is None and r["agent_name"] else ""))
+    if len(rows) > 40:
+        lines.append(f"… ve {len(rows) - 40} talep daha (web panelinde).")
+    await reply(update, "\n".join(lines))
+
+
 # ---------------------------------------------------------------- onay butonu
 async def on_ack(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -704,6 +778,7 @@ def register(app) -> None:
     for names, fn in [
         ("liste", cmd_list), ("yaklasan", cmd_upcoming), ("mulk", cmd_property), ("zam", cmd_zam),
         ("yenile", cmd_renew), ("duzenle", cmd_edit), ("sil", cmd_delete), ("tufe", cmd_tufe), ("hukuk", cmd_hukuk),
+        ("talep", cmd_talep), ("talepler", cmd_talepler),
         ("sifre", cmd_password), ("web", cmd_web),
         ("ozet", cmd_summary), ("emlakcilar", cmd_agents), ("davet", cmd_invite),
         ("cikar", cmd_remove_agent), ("devret", cmd_transfer), ("aktivite", cmd_activity),

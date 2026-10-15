@@ -64,7 +64,7 @@
       <span><b>{{ brand }}</b><small>Real Estate OS</small></span>
     </a>
     <button class="icon-btn" type="button" data-spotlight aria-label="Ara">{{ m.icon('search', 'lg') }}</button>
-    <a href="{{ url_for('account') }}" class="avatar" aria-label="Hesabım">{{ g.user.name|initials }}</a>
+    <button class="avatar menu-btn" type="button" data-open="appMenu" aria-label="Menü ve hesabım">{{ g.user.name|initials }}{% if nav.alerts %}<i class="dot"></i>{% endif %}</button>
   </header>
 
   <main class="main" id="main">
@@ -102,6 +102,31 @@
       {% if is_owner %}<a class="tile" href="{{ url_for('bulk_import') }}">{{ m.icon('upload') }}<b>Toplu Giriş</b><small>Excel'den 100+ daireyi tek seferde aktar</small></a>{% endif %}
     </div>
     <button class="btn ghost block" type="button" data-spotlight>{{ m.icon('search') }}Ara (Ctrl K)</button>
+  </div>
+</dialog>
+
+<dialog class="sheet" id="appMenu" aria-label="Menü">
+  <div class="modal">
+    <div class="sheet-handle mobile-only"></div>
+    <div class="modal-h">
+      <a class="me" href="{{ url_for('account') }}"><span class="avatar">{{ g.user.name|initials }}</span><span><b>{{ g.user.name }}</b><small>{{ 'Ofis Sahibi' if is_owner else 'Danışman' }} · Hesabım</small></span></a>
+      <button class="x-btn" type="button" data-close aria-label="Kapat">{{ m.icon('x') }}</button>
+    </div>
+    <nav class="side-nav menu-nav">
+      {{ m.navlink('dashboard', 'grid', 'Panel') }}
+      {{ m.navlink('takip', 'radar', 'Takip Merkezi', count=nav.alerts) }}
+      {{ m.navlink('listings_view', 'building', 'İlan Portföyü') }}
+      {% for item in nav.extra %}{{ m.navlink(item.endpoint, item.icon, item.label, endpoints=item.endpoints, count=item.count, count_cls=item.count_cls) }}{% endfor %}
+      {{ m.navlink('add', 'plus', 'Mülk Ekle') }}
+      {% if is_owner %}
+      <div class="nav-label">Yönetim</div>
+      {% for item in nav.owner_extra %}{{ m.navlink(item.endpoint, item.icon, item.label, endpoints=item.endpoints, count=item.count, count_cls=item.count_cls) }}{% endfor %}
+      {{ m.navlink('bulk_import', 'upload', 'Toplu Giriş') }}
+      {{ m.navlink('team_view', 'users', 'Ekip') }}
+      {{ m.navlink('activity', 'activity', 'Aktivite') }}
+      {% endif %}
+    </nav>
+    <form method="post" action="{{ url_for('logout') }}" class="mt12">{{ m.csrf_field() }}<button class="btn ghost block" type="submit">{{ m.icon('logout') }}Çıkış yap</button></form>
   </div>
 </dialog>
 

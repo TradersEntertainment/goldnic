@@ -158,6 +158,18 @@ def _parse_table_view(html_text: str, consultant: str, phone: str) -> list[dict[
     return items
 
 
+# Senkron sonrası çalışan kancalar (ör. müşteri talebi eşleştirme): ad → fonksiyon(db, sonuç)
+SYNC_HOOKS: dict[str, Any] = {}
+
+
+def _after_sync(db: Database, res: dict[str, Any]) -> None:
+    for name, fn in list(SYNC_HOOKS.items()):
+        try:
+            fn(db, res)
+        except Exception:  # noqa: BLE001 - bir kanca senkronu bozmamalı
+            logger.exception("Senkron kancası çalışmadı: %s", name)
+
+
 def seed_initial_listings(db: Database, force: bool = False) -> dict[str, int]:
     """Uygulama açılışında kayıtlı ilan yoksa initial_listings.json dosyasını veritabanına yükler."""
     if not INITIAL_FILE.exists():
@@ -192,12 +204,14 @@ def seed_initial_listings(db: Database, force: bool = False) -> dict[str, int]:
     logger.info(
         f"Seeded Sahibinden listings: {len(data)} total ({created} new, {updated} updated, {republished} republished)"
     )
-    return {
+    res = {
         "total": len(data),
         "created": created,
         "updated": updated,
         "republished": republished,
     }
+    _after_sync(db, res)
+    return res
 
 
 def sync_listings_data(raw_payload: Any, db: Database) -> dict[str, int]:
@@ -245,12 +259,15 @@ def sync_listings_data(raw_payload: Any, db: Database) -> dict[str, int]:
         elif st == "republished":
             republished += 1
 
-    return {
+    res = {
         "processed": len(items),
         "created": created,
         "updated": updated,
         "republished": republished,
     }
+    if items:
+        _after_sync(db, res)
+    return res
 
 
 def fetch_live_store_listings(max_pages: int = 4) -> list[dict[str, Any]]:

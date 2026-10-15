@@ -1,0 +1,28 @@
+{% import "_macros.html" as m with context %}
+<div class="card {{ 'gold' if rows }}" id="musteriler">
+  <div class="card-h"><h2>{{ m.icon('target') }}Bu daireye uygun müşteriler</h2>
+    <a class="more" href="{{ url_for('property_clients', pid=p.id) }}">{{ total }} müşteri {{ m.icon('arrow-right', 'sm') }}</a></div>
+  {% if soon %}<div class="alert info mb8">{{ m.icon('clock') }}<div>Daire <b>{{ soon|tdate }}</b> tarihinde boşalıyor (tahliye taahhüdü). Kiracı adayları şimdiden hazırlanabilir.</div></div>{% endif %}
+  {% if rows %}
+  <div class="list">
+    {% for mm in rows %}
+    <div class="item match" data-match-card>
+      <div class="i-ic"><b>{{ mm.score }}</b></div>
+      <div class="i-body">
+        <a class="i-title" href="{{ url_for('talep_view', did=mm.demand.id) }}">{{ mm.demand.name }}{% if mm.demand.urgency == 'acil' %} <span class="badge b-err">ACİL</span>{% endif %}</a>
+        <div class="i-sub">{% for text, cls in mm.reasons[:4] %}<span class="rs {{ cls }}">{{ text }}</span> {% endfor %}</div>
+        <div class="i-actions">
+          {% if mm.wa_url %}<a class="btn xs wa" href="{{ mm.wa_url }}" target="_blank" rel="noopener" data-wa-send="{{ url_for('match_status', mid=mm.id) }}?status=sent">{{ m.icon('chat') }}WhatsApp'tan gönder</a>{% endif %}
+          {% if mm.demand.phone %}<a class="btn xs ghost" href="tel:{{ mm.demand.phone }}">{{ m.icon('phone') }}Ara</a>{% endif %}
+          <span class="badge b-ok" data-sent-label hidden>{{ m.icon('check') }}Gönderildi</span>
+        </div>
+      </div>
+      <div class="i-side">{{ mm.status_label }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="mute mb8">Talep havuzunda bu daireye uyan aktif müşteri yok. Yeni talep geldiğinde otomatik eşleşir.</p>
+  <a class="btn sm ghost" href="{{ url_for('talep_new') }}">{{ m.icon('plus') }}Müşteri talebi ekle</a>
+  {% endif %}
+</div>

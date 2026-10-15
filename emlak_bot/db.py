@@ -150,6 +150,79 @@ CREATE TABLE IF NOT EXISTS documents (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_documents_prop ON documents(property_id);
+-- Müşteri Talep Havuzu (Matching CRM)
+CREATE TABLE IF NOT EXISTS client_demands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    phone TEXT,
+    deal_type TEXT NOT NULL DEFAULT 'kiralik',   -- kiralik | satilik
+    category TEXT NOT NULL DEFAULT 'konut',       -- konut | isyeri | arsa
+    kinds TEXT,                                   -- daire,rezidans (boş: kategorideki her tür)
+    rooms TEXT,                                   -- 3+1,2+1
+    rooms_min INTEGER,                            -- en az yatak odası ("3+1 ve üzeri" → 3)
+    budget_min REAL,
+    budget_max REAL,
+    districts TEXT,                               -- izmit,kartepe
+    hoods TEXT,                                   -- yahya kaptan,alikahya
+    amenities TEXT,                               -- site,otopark,!esyali (! = istenmiyor)
+    urgency TEXT NOT NULL DEFAULT 'normal',       -- acil | normal | esnek
+    move_date TEXT,
+    source TEXT,
+    notes TEXT,                                   -- müşterinin isteği (serbest metin)
+    status TEXT NOT NULL DEFAULT 'active',        -- active | paused | won | lost
+    agent_id INTEGER REFERENCES users(id),
+    created_by INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    last_contact_at TEXT,
+    closed_at TEXT,
+    close_note TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_demands_status ON client_demands(status, agent_id);
+CREATE TABLE IF NOT EXISTS demand_matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    demand_id INTEGER NOT NULL REFERENCES client_demands(id) ON DELETE CASCADE,
+    target_type TEXT NOT NULL,                    -- listing | property
+    target_id INTEGER NOT NULL,
+    score INTEGER NOT NULL,
+    reasons TEXT,                                 -- JSON [(metin, sınıf)]
+    status TEXT NOT NULL DEFAULT 'new',           -- new | sent | interested | viewing | rejected | dismissed
+    active INTEGER NOT NULL DEFAULT 1,            -- aday hâlâ uygun mu (ilan yayında / daire boş)
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    notified_at TEXT,
+    sent_at TEXT,
+    sent_by INTEGER,
+    viewing_at TEXT,
+    note TEXT,
+    UNIQUE (demand_id, target_type, target_id)
+);
+CREATE INDEX IF NOT EXISTS ix_matches_target ON demand_matches(target_type, target_id);
+CREATE TABLE IF NOT EXISTS demand_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    demand_id INTEGER NOT NULL REFERENCES client_demands(id) ON DELETE CASCADE,
+    user_id INTEGER,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_demand_notes ON demand_notes(demand_id);
+-- Kapanan işlemler (performans panosu): kiralama ve satışlar
+CREATE TABLE IF NOT EXISTS deals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,                           -- kiralama | satis
+    agent_id INTEGER REFERENCES users(id),
+    listing_id INTEGER,
+    property_id INTEGER,
+    demand_id INTEGER,
+    amount REAL NOT NULL,                         -- aylık kira veya satış bedeli
+    fee REAL,                                     -- gerçekleşen hizmet bedeli (boşsa tahmini hesaplanır)
+    deal_date TEXT NOT NULL,
+    listed_on TEXT,                               -- ilan / boşalma tarihi
+    days_on_market INTEGER,
+    client_name TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_deals_date ON deals(deal_date);
 CREATE TABLE IF NOT EXISTS legal_acks (
     property_id INTEGER NOT NULL,
     kind TEXT NOT NULL,
@@ -228,6 +301,11 @@ MIGRATION_COLUMNS: dict[str, dict[str, str]] = {
 # users.id'ye referans veren sütunlar (kullanıcı birleştirmede taşınır; modüller ekleme yapabilir)
 USER_REF_COLUMNS: list[tuple[str, str]] = [
     ("properties", "agent_id"),
+    ("client_demands", "agent_id"),
+    ("client_demands", "created_by"),
+    ("demand_matches", "sent_by"),
+    ("demand_notes", "user_id"),
+    ("deals", "agent_id"),
     ("eviction_commitments", "created_by"),
     ("documents", "created_by"),
     ("legal_acks", "user_id"),
@@ -263,6 +341,7 @@ class Database:
             c.commit()
         from .tufe import ensure_builtin
         ensure_builtin(self)  # TÜFE tavanı internet olmasa da hesaplanabilsin
+        self.backfill_deals()
 
     def _conn(self) -> sqlite3.Connection:
         c = sqlite3.connect(self.path, timeout=10)
@@ -474,6 +553,8 @@ class Database:
             raise ValueError(f"Güncellenemez alan: {bad}")
         sets = ", ".join(f"{k}=?" for k in f)
         self.execute(f"UPDATE properties SET {sets} WHERE id=?", (*f.values(), pid))
+        if f.get("status") not in (None, "vacant"):
+            self.deactivate_matches("property", pid)
 
     def transfer_properties(self, from_user: int, to_user: int) -> int:
         return self.execute(
@@ -806,6 +887,39 @@ class Database:
     def link_sahibinden_to_property(self, listing_id: int, property_id: int) -> None:
         self.execute("UPDATE sahibinden_listings SET property_id=? WHERE id=?", (property_id, listing_id))
 
+    def deactivate_matches(self, target_type: str, target_id: int) -> None:
+        """İlan kapandığında / daire kiralandığında müşteri eşleşmeleri pasifleşir (tekrar önerilmez)."""
+        self.execute("UPDATE demand_matches SET active=0, updated_at=? WHERE target_type=? AND target_id=? AND active=1",
+                     (now_iso(), target_type, target_id))
+
+    # ---- kapanan işlemler (performans panosu) ----
+    def record_deal(self, kind: str, agent_id: int | None, amount: float, deal_date: str, *,
+                    listing_id: int | None = None, property_id: int | None = None, listed_on: str | None = None,
+                    client_name: str | None = None, demand_id: int | None = None) -> int:
+        """Kiralama / satış işlemini kaydeder; piyasada kalma süresini (gün) hesaplar."""
+        days = None
+        if listed_on and deal_date:
+            try:
+                days = max(0, (datetime.fromisoformat(deal_date[:10]) - datetime.fromisoformat(listed_on[:10])).days)
+            except ValueError:
+                days = None
+        return self.execute(
+            "INSERT INTO deals (kind, agent_id, listing_id, property_id, demand_id, amount, deal_date, listed_on,"
+            " days_on_market, client_name, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (kind, agent_id, listing_id, property_id, demand_id, amount, deal_date[:10],
+             listed_on[:10] if listed_on else None, days, client_name or None, now_iso()))
+
+    def backfill_deals(self) -> int:
+        """Performans panosundan önce kapanmış ilanları işlem kaydına aktarır (bir kez, eksik olanlar)."""
+        rows = self.query(
+            "SELECT s.* FROM sahibinden_listings s WHERE s.status IN ('rented','sold') AND s.deal_date IS NOT NULL"
+            " AND NOT EXISTS (SELECT 1 FROM deals d WHERE d.listing_id=s.id)")
+        for r in rows:
+            self.record_deal("kiralama" if r["status"] == "rented" else "satis", r["consultant_id"],
+                             float(r["deal_rent"] or r["price"] or 0), r["deal_date"], listing_id=r["id"],
+                             property_id=r["property_id"], listed_on=r["first_seen"], client_name=r["deal_tenant_name"])
+        return len(rows)
+
     def mark_listing_rented(
         self,
         lid: int,
@@ -843,6 +957,10 @@ class Database:
             "deal_rent=?, deal_tenant_name=?, deal_tenant_phone=?, deal_notes=? WHERE id=?",
             (prop_id, start_date or now[:10], rent, tenant_name, tenant_phone, notes, lid),
         )
+        listing = self.get_sahibinden_listing(lid)
+        self.record_deal("kiralama", agent_id, rent, start_date or now[:10], listing_id=lid, property_id=prop_id,
+                         listed_on=listing["first_seen"] if listing else None, client_name=tenant_name)
+        self.deactivate_matches("listing", lid)
         return prop_id
 
     def mark_listing_sold(
@@ -860,10 +978,16 @@ class Database:
             "deal_tenant_phone=?, deal_notes=? WHERE id=?",
             (deal_date, price, buyer_name or None, buyer_phone or None, notes or None, lid),
         )
+        listing = self.get_sahibinden_listing(lid)
+        if listing and not self.one("SELECT 1 FROM deals WHERE listing_id=? AND kind='satis'", (lid,)):
+            self.record_deal("satis", listing["consultant_id"], price, deal_date, listing_id=lid,
+                             listed_on=listing["first_seen"], client_name=buyer_name)
+        self.deactivate_matches("listing", lid)
 
     def close_or_delete_listing(self, lid: int, action: str = "archive", reason: str = "") -> None:
         """İlanı yayından kaldırır veya tamamen siler."""
         now = now_iso()
+        self.deactivate_matches("listing", lid)
         if action == "delete":
             self.execute("DELETE FROM sahibinden_listings WHERE id=?", (lid,))
         else:
@@ -904,9 +1028,14 @@ class Database:
         self.execute(
             "UPDATE properties SET status='active', tenant_name=?, tenant_phone=?, rent=?, "
             "renewal_date=?, notes=?, exit_date=NULL, planned_pct=NULL, planned_rent=NULL, "
-            "lease_start_date=? WHERE id=?",
+            "lease_start_date=?, lease_term_months=NULL, delivery_date=NULL, tenant_tc=NULL, tenant_address=NULL, guarantor_name=NULL, "
+            "guarantor_tc=NULL, guarantor_phone=NULL, guarantor_address=NULL, guarantor_limit=NULL WHERE id=?",
             (tenant_name, tenant_phone, rent, renewal_date, comb, start_date or None, pid),
         )
+        if old:
+            self.record_deal("kiralama", old["agent_id"], rent, start_date or now_iso()[:10], property_id=pid,
+                             listed_on=old["exit_date"], client_name=tenant_name)
+        self.deactivate_matches("property", pid)
 
 
 def normalize_title(title: str) -> str:

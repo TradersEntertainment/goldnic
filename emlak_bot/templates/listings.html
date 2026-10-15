@@ -82,7 +82,7 @@
         {% else %}<span class="badge">{{ it.listing_type }}</span>{% endif %}
         {% if it.republish_count and it.republish_count > 1 %}<span class="badge b-ok" title="30 günlük yeniden yayında mükerrer kayıt açılmadı, mevcut ilan güncellendi">{{ m.icon('refresh') }}{{ it.republish_count }}. kez yenilendi</span>{% endif %}
         {% if it.linked_prop_id %}<span class="badge b-ok">{{ m.icon('check') }}Kira takibinde</span>{% endif %}
-        {% for b in badges.get(it.id, []) %}<span class="badge {{ b[1] }}">{{ b[0] }}</span>{% endfor %}
+        {% for b in badges.get(it.id, []) %}{% if b|length > 2 and b[2] %}<a class="badge {{ b[1] }}" href="{{ b[2] }}">{{ b[0] }}</a>{% else %}<span class="badge {{ b[1] }}">{{ b[0] }}</span>{% endif %}{% endfor %}
       </div>
       <div class="lcard-price">{{ it.price_str }}</div>
     </div>

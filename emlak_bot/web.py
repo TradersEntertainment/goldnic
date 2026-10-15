@@ -76,6 +76,17 @@ ACTION_LABELS: dict[str, tuple[str, str, str | None]] = {
     "taahhut_guncelledi": ("Tahliye taahhüdünü güncelledi", "gavel", "property"),
     "hukuk_onayladi": ("Hukuki uyarıyı kapattı", "scale", "property"),
     "belge_olusturdu": ("Resmi belge oluşturdu", "file", "property"),
+    "talep_ekledi": ("Müşteri talebi ekledi", "target", "demand"),
+    "talep_guncelledi": ("Müşteri talebini güncelledi", "target", "demand"),
+    "talep_durum": ("Talep durumunu değiştirdi", "target", "demand"),
+    "talep_not": ("Talebe görüşme notu ekledi", "chat", "demand"),
+    "talep_sildi": ("Müşteri talebini sildi", "x", None),
+    "eslesme_sent": ("Müşteriye ilan gönderdi (WhatsApp)", "chat", "demand"),
+    "eslesme_interested": ("Müşteri ilgilendi", "heart", "demand"),
+    "eslesme_viewing": ("Gösterim planladı", "calendar", "demand"),
+    "eslesme_rejected": ("Müşteri beğenmedi", "x", "demand"),
+    "eslesme_dismissed": ("Eşleşmeyi gizledi", "archive", "demand"),
+    "eslesme_new": ("Eşleşmeyi geri aldı", "refresh", "demand"),
 }
 
 
@@ -690,7 +701,9 @@ def create_app(db: Database, cfg: Config) -> Flask:
                 log.exception("Mülk paneli oluşturulamadı (#%s)", pid)
                 panel = None
             if panel:
-                panels.append(panel)
+                # kanca (sıra, html) döndürerek panelini öne alabilir (ör. boş dairede uygun müşteriler)
+                panels.append(panel if isinstance(panel, tuple) else (0, panel))
+        panels = [html for _, html in sorted(panels, key=lambda x: x[0])]
 
         return render_template(
             "property.html",
@@ -1332,9 +1345,10 @@ def create_app(db: Database, cfg: Config) -> Flask:
         return redirect(url_for("property_view", pid=pid))
 
     # ------------------------------------------------------------ modüller
-    from . import web_docs, web_law, web_pwa
+    from . import web_crm, web_docs, web_law, web_pwa
     web_pwa.register(app, ctx)
     web_law.register(app, ctx)
     web_docs.register(app, ctx)
+    web_crm.register(app, ctx)
 
     return app

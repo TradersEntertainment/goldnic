@@ -40,6 +40,8 @@ class Config:
     brand_address: str = "İzmit / Kocaeli"
     brand_phone: str = ""
     brand_license_no: str = ""
+    commission_rent_months: float = 1.0   # kiralamada hizmet bedeli (aylık kira katı, KDV hariç)
+    commission_sale_pct: float = 4.0      # satışta toplam hizmet bedeli (%; alıcı + satıcı, KDV hariç)
 
 
 def load_config() -> Config:
@@ -95,4 +97,6 @@ def load_config() -> Config:
         brand_address=os.getenv("BRAND_ADDRESS", "İzmit / Kocaeli").strip() or "İzmit / Kocaeli",
         brand_phone=os.getenv("BRAND_PHONE", "").strip(),
         brand_license_no=os.getenv("BRAND_LICENSE_NO", "").strip(),
+        commission_rent_months=float(os.getenv("COMMISSION_RENT_MONTHS", "1").replace(",", ".") or 1),
+        commission_sale_pct=float(os.getenv("COMMISSION_SALE_PCT", "4").replace(",", ".") or 4),
     )

@@ -23,7 +23,7 @@
       <td class="rt-main"><span class="t-title">{{ lab[0] }}</span><span class="t-sub">{{ r.ts|dt }}</span></td>
       <td data-label="Kişi">{{ r.user_name }}</td>
       <td data-label="İşlem"><span class="badge">{{ m.icon(lab[1]) }}{{ r.action }}</span></td>
-      <td data-label="Kayıt">{% if r.property_id %}{% if lab[2] == 'property' %}<a href="{{ url_for('property_view', pid=r.property_id) }}">Mülk #{{ r.property_id }}</a>{% elif lab[2] == 'user' %}<span class="mute">Kullanıcı #{{ r.property_id }}</span>{% elif lab[2] == 'listing' %}<span class="mute">İlan #{{ r.property_id }}</span>{% else %}#{{ r.property_id }}{% endif %}{% endif %}</td>
+      <td data-label="Kayıt">{% if r.property_id %}{% if lab[2] == 'property' %}<a href="{{ url_for('property_view', pid=r.property_id) }}">Mülk #{{ r.property_id }}</a>{% elif lab[2] == 'user' %}<span class="mute">Kullanıcı #{{ r.property_id }}</span>{% elif lab[2] == 'listing' %}<span class="mute">İlan #{{ r.property_id }}</span>{% elif lab[2] == 'demand' %}<a href="{{ url_for('talep_view', did=r.property_id) }}">Talep #{{ r.property_id }}</a>{% else %}#{{ r.property_id }}{% endif %}{% endif %}</td>
       <td data-label="Detay"><span class="mute">{{ r.detail or '' }}</span></td>
     </tr>
     {% endfor %}

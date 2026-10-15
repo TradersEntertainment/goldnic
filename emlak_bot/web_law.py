@@ -192,6 +192,18 @@ def register(app: Flask, ctx) -> None:
 
     app.extensions.setdefault("gn_property_panels", []).append(law_panel)
 
+    def close_commitments_on_exit(pid: int) -> None:
+        """Kiracı çıktığında ona ait açık tahliye taahhütleri 'tahliye edildi' olarak kapanır; radar susar."""
+        p = db.get_property(pid)
+        if not p:
+            return
+        when = legal._d(p["exit_date"]) or ctx.today()
+        for row in db.query("SELECT id FROM eviction_commitments WHERE property_id=? AND status='active'", (pid,)):
+            legal.update_commitment(db, g.user["id"] if g.user else None, row["id"], status="evicted",
+                                    action_date=when, notes="Kiracı çıkışı işlendi; taahhüt kapandı.")
+
+    app.extensions.setdefault("gn_on_vacant", []).append(close_commitments_on_exit)
+
     # ------------------------------------------------------------ Takip Merkezi
     @agenda.provider("legal")
     def legal_items(ctx_, user, today: date) -> list[AgendaItem]:

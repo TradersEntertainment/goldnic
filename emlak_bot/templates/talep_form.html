@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "_crm.html" as crm with context %}
+{% block title %}Yeni müşteri talebi — {{ brand }}{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div><div class="eyebrow">Müşteri Talep Havuzu</div><h1>Yeni müşteri talebi</h1>
+    <div class="sub">Müşterinin cümlesini olduğu gibi yazın — oda, bütçe, bölge ve aciliyet otomatik anlaşılır, portföy anında taranır.</div></div>
+  <div class="actions"><a class="btn ghost" href="{{ url_for('talepler') }}">{{ m.icon('arrow-left') }}Talep havuzu</a></div>
+</div>
+
+<form method="post" class="g-side" data-demand-form>
+  {{ m.csrf_field() }}
+  <div class="stack">
+    <div class="card gold">
+      <div class="card-h"><h2>{{ m.icon('sparkles') }}Müşteri ne arıyor?</h2><span class="badge b-gold">Akıllı ayrıştırma</span></div>
+      <label for="t_req" class="sr-only">Müşterinin isteği</label>
+      <textarea id="t_req" name="request" rows="4" autofocus data-demand-parse="#parsePreview" data-fill-name="#t_name" data-fill-phone="#t_phone" data-ctrl-enter
+        placeholder="Örn: Mehmet Bey 0532 111 22 33 — 3+1 kiralık arıyor, bütçe 30-35 bin, Yahya Kaptan veya Alikahya istiyor, acelesi var.">{{ values.get('request', '') }}</textarea>
+      <div class="parse-preview" id="parsePreview" aria-live="polite"><span class="mute">Yazdıkça anlaşılan ölçütler burada görünür.</span></div>
+      <div class="form-grid mt12">
+        <div><label for="t_name">Müşteri adı *</label><input id="t_name" name="name" value="{{ values.get('name', '') }}" placeholder="Mehmet Yılmaz" autocomplete="off"></div>
+        <div><label for="t_phone">Telefon</label><input id="t_phone" name="phone" type="tel" inputmode="tel" value="{{ values.get('phone', '') }}" placeholder="0 5xx xxx xx xx"><div class="hint">Tek tıkla WhatsApp'tan ilan göndermek için.</div></div>
+      </div>
+    </div>
+    <details class="card" {{ 'open' if values.get('deal_type') or values.get('kinds') or values.get('rooms') }}>
+      <summary class="card-h summary-h"><h2>{{ m.icon('filter') }}Ölçütleri elle belirle</h2><span class="mute">İsteğe bağlı — doldurduğunuz alan metinden çıkarılanı ezer</span></summary>
+      {{ crm.criteria_fields(values, kinds, amenity_labels, room_options, popular, urgency_labels, deal_labels, 'n') }}
+    </details>
+  </div>
+  <div class="stack">
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('user') }}Kayıt</h2></div>
+      <label for="t_src">Müşteri nereden geldi?</label>
+      <select id="t_src" name="source"><option value="">—</option>{% for s in sources %}<option value="{{ s }}" {{ 'selected' if values.get('source') == s }}>{{ s }}</option>{% endfor %}</select>
+      <label for="t_move">Taşınma / alım tarihi</label><input id="t_move" type="date" name="move_date" value="{{ values.get('move_date', '') }}">
+      {% if agents %}
+      <label for="t_agent">Sorumlu danışman</label>
+      <select id="t_agent" name="agent_id">{% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if (values.get('agent_id')|string) == (a.id|string) or (not values.get('agent_id') and a.id == g.user.id) }}>{{ a.name }}</option>{% endfor %}</select>
+      {% endif %}
+      <button class="btn block mt16" type="submit">{{ m.icon('target') }}Kaydet ve eşleştir</button>
+      <p class="hint mt8"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> ile metin kutusundan da kaydedebilirsiniz.</p>
+    </div>
+    <div class="card tight">
+      <div class="guide-box">
+        <b>{{ m.icon('bell') }} Sıfır fırsat kaçırma</b>
+        <p class="mute mb0">Talep kaydedildiği anda tüm Sahibinden portföyü ve boşalan / boşalacak daireler taranır. Sonradan gelen her yeni ilan ve boşalan daire de otomatik eşleştirilir; uygun olan anında Telegram'a "WhatsApp'tan gönder" butonuyla düşer.</p>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

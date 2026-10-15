@@ -10,16 +10,25 @@ log = logging.getLogger(__name__)
 Buttons = list[list[tuple[str, str]]]
 
 
-def send_telegram_sync(token: str, chat_id: str, text: str) -> bool:
-    """Web panelden (async olmayan bağlamdan) Telegram'a bildirim gönderir."""
+def send_telegram_sync(token: str, chat_id: str, text: str,
+                       url_buttons: list[list[tuple[str, str]]] | None = None) -> bool:
+    """Web panelden (async olmayan bağlamdan) Telegram'a bildirim gönderir.
+
+    url_buttons: [[(etiket, https://...)], ...] — mesajın altında bağlantı butonları (ör. tek tık WhatsApp).
+    """
     import httpx
 
+    payload: dict = {"chat_id": chat_id, "text": text, "parse_mode": "HTML",
+                     "link_preview_options": {"is_disabled": True}}
+    rows = [[{"text": label, "url": url} for label, url in row if url.startswith(("https://", "http://"))]
+            for row in (url_buttons or [])]
+    rows = [r for r in rows if r]
+    if rows:
+        payload["reply_markup"] = {"inline_keyboard": rows}
     try:
-        r = httpx.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
-            timeout=8,
-        )
+        r = httpx.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload, timeout=8)
+        if r.status_code != 200:
+            log.warning("Telegram bildirimi reddedildi (%s): %s", r.status_code, r.text[:200])
         return r.status_code == 200
     except Exception:  # noqa: BLE001
         log.exception("Telegram bildirimi gönderilemedi: %s", chat_id)

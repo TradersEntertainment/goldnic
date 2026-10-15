@@ -41,3 +41,25 @@ def tufe_job(db, cfg: Any) -> list[str]:
         for target in owner_targets(db, cfg):
             send_telegram_sync(cfg.bot_token, target, text)
     return res.periods or []
+
+
+def matching_job(db, cfg: Any) -> int:
+    """Her sabah: tüm talepleri yeniden eşleştirir, bildirilmemiş eşleşmeleri gönderir, acil talepleri hatırlatır."""
+    from . import crm
+    from . import matching as M
+    from . import texts
+
+    today = local_today(cfg)
+    crm.refresh(db, today)
+    sent = crm.notify(db, cfg, crm.pending_notifications(db, today))
+    urgent = [f for f in crm.followups(db, today) if f["kind"] == "urgent"]
+    if urgent and getattr(cfg, "bot_token", ""):
+        lines = ["⏰ <b>Acil müşteri talepleri aranmayı bekliyor</b>"]
+        for f in urgent[:15]:
+            d = f["demand"]
+            lines.append(f"• {texts.esc(d['name'])} ({f['idle']} gündür) — {texts.esc(M.summary(M.Criteria.from_row(d)))}"
+                         + (f" · {texts.esc(d['phone'])}" if d["phone"] else ""))
+        for target in owner_targets(db, cfg):
+            send_telegram_sync(cfg.bot_token, target, "\n".join(lines))
+    log.info("Eşleştirme görevi: %d bildirim, %d acil talep hatırlatması", sent, len(urgent))
+    return sent

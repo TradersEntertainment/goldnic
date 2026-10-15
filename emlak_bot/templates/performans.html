@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% block title %}Performans Panosu — {{ brand }}{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div><div class="eyebrow">Ofis performansı · {{ period_label }}</div><h1>Liderlik Panosu</h1>
+    <div class="sub">Kapanan kiralama ve satışlar, tahmini hizmet bedeli (ciro), kiralanma süresi ve müşteri takibi.</div></div>
+  <div class="actions scroll-x">
+    {% for key, label in periods.items() %}<a class="chip {{ 'on' if period == key }}" href="{{ url_for('performans', donem=key) }}">{{ label }}</a>{% endfor %}
+  </div>
+</div>
+
+<div class="kpis">
+  <div class="kpi prime"><div class="k-ic">{{ m.icon('coins') }}</div><b class="num">{{ office.revenue|money }}</b><span>Tahmini ciro (KDV hariç)</span></div>
+  <div class="kpi ok"><div class="k-ic">{{ m.icon('key') }}</div><b class="num">{{ office.rentals }}</b><span>Kiralama</span></div>
+  <div class="kpi"><div class="k-ic">{{ m.icon('sparkles') }}</div><b class="num">{{ office.sales }}</b><span>Satış</span></div>
+  <div class="kpi info"><div class="k-ic">{{ m.icon('clock') }}</div><b class="num">{{ office.avg_days|days1 if office.avg_days is not none else '—' }}{% if office.avg_days is not none %}<small> gün</small>{% endif %}</b><span>Ortalama kiralanma süresi</span></div>
+  <div class="kpi violet"><div class="k-ic">{{ m.icon('target') }}</div><b class="num">{{ ('%' ~ office.conversion) if office.conversion is not none else '—' }}</b><span>Talep kazanma oranı ({{ office.won }}/{{ office.won + office.lost }})</span></div>
+</div>
+
+{% set top = rows[:3]|selectattr('deals')|list %}
+{% if top %}
+<div class="podium n{{ top|length }} mb16">
+  {% for s in top %}
+  <div class="pod p{{ s.rank }} {{ 'is-me' if s.user_id == g.user.id }}">
+    <div class="medal">{{ ['🥇', '🥈', '🥉'][s.rank - 1] }}</div>
+    <span class="avatar lg">{{ s.name|initials }}</span>
+    <b>{{ s.name }}</b>
+    <div class="pod-num">{% if owner or s.user_id == g.user.id %}{{ s.revenue|money }}{% else %}{{ s.deals }} işlem{% endif %}</div>
+    <small class="mute">{{ s.rentals }} kiralama · {{ s.sales }} satış</small>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-h"><h2>{{ m.icon('crown') }}Danışman sıralaması</h2><span class="mute">{{ period_label }}</span></div>
+    <div class="table-wrap">
+    <table class="rt lb">
+      <thead><tr><th>#</th><th>Danışman</th><th class="right">Kiralama</th><th class="right">Satış</th><th class="right">Ciro</th><th class="right">Ort. süre</th><th class="right">Portföy</th><th class="right">Talep</th><th class="right">Gönderilen ilan</th><th class="right">Takip</th></tr></thead>
+      <tbody>
+      {% for s in rows %}
+      <tr class="{{ 'is-me' if s.user_id == g.user.id }}">
+        <td class="rank" data-label="Sıra">{{ s.rank }}</td>
+        <td class="rt-main"><span class="t-title"><span class="avatar sm">{{ s.name|initials }}</span> {{ s.name }}</span><span class="t-sub">{{ 'Ofis Sahibi' if s.role == 'owner' else 'Danışman' }}{% if not s.active %} · ayrıldı{% endif %}</span></td>
+        <td class="right" data-label="Kiralama">{{ s.rentals }}</td>
+        <td class="right" data-label="Satış">{{ s.sales }}</td>
+        <td class="right" data-label="Ciro">{% if owner or s.user_id == g.user.id %}<b>{{ s.revenue|money }}</b>{% else %}<span class="mute">gizli</span>{% endif %}</td>
+        <td class="right" data-label="Ort. kiralanma">{{ (s.avg_days|days1 ~ ' gün') if s.avg_days is not none else '—' }}</td>
+        <td class="right" data-label="Portföy">{{ s.portfolio }}</td>
+        <td class="right" data-label="Talep (aktif / kazanılan)">{{ s.demands_active }} / {{ s.demands_won }}</td>
+        <td class="right" data-label="Gönderilen ilan">{{ s.matches_sent }}</td>
+        <td class="right" data-label="Arama & takip">{{ s.calls }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="hint mt12">Ciro tahmini Taşınmaz Ticareti Hakkında Yönetmelik üst sınırlarıyla hesaplanır: kiralamada {{ rent_months|plainnum }} aylık kira, satışta toplam %{{ sale_pct|plainnum }} (alıcı + satıcı), KDV hariç. "Takip": arama, hatırlatma onayı, müşteriye ilan gönderimi ve gösterimler.</p>
+</div>
+
+<div class="g2">
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('chart') }}Son 6 ay</h2><span class="mute">ciro · işlem</span></div>
+      <div class="bars" role="img" aria-label="Son 6 ayın aylık cirosu">
+        {% for mo in months %}
+        <div class="bar {{ 'cur' if mo.current }}" title="{{ mo.label }}: {{ mo.revenue|money }} · {{ mo.count }} işlem">
+          <span class="bar-v">{{ mo.count }}</span>
+          <i style="height:{{ [mo.pct, 4]|max }}%"></i>
+          <small>{{ mo.label }}</small>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>{{ m.icon('sparkles') }}Son kapanan işlemler</h2></div>
+      {% if recent %}
+      <div class="list">
+        {% for d in recent %}
+        <div class="item {{ 'ok' if d.kind == 'kiralama' else 'gold' }}">
+          <div class="i-ic">{{ m.icon('key' if d.kind == 'kiralama' else 'coins') }}</div>
+          <div class="i-body"><div class="i-title">{{ 'Kiralama' if d.kind == 'kiralama' else 'Satış' }} · {{ d.amount|money }}{% if d.kind == 'kiralama' %}/ay{% endif %}</div>
+            <div class="i-sub">{{ d.client_name or '-' }}{% if d.days_on_market is not none %} · {{ d.days_on_market }} günde{% endif %}</div></div>
+          <div class="i-side">{{ d.deal_date|tdate }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}{{ m.empty('Bu dönemde kapanan işlem yok', 'İlanlarda "Kiralandı / Satıldı" ve boş dairede "Yeni kiracı" kaydı buraya yansır.', 'chart') }}{% endif %}
+    </div>
+</div>
+{% endblock %}

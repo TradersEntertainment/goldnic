@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m with context %}
+{% import "_crm.html" as crm with context %}
+{% block title %}Talep Havuzu — {{ brand }}{% endblock %}
+{% block body %}
+<div class="page-head">
+  <div><div class="eyebrow">Matching CRM</div><h1>Müşteri Talep Havuzu</h1>
+    <div class="sub">Gelen her müşteri isteği Sahibinden portföyü ve boşalan dairelerle otomatik eşleşir.</div></div>
+  <div class="actions">
+    {% if g.user.role == 'owner' %}<form method="post" action="{{ url_for('talepler_rematch') }}">{{ m.csrf_field() }}<button class="btn ghost" type="submit">{{ m.icon('refresh') }}Şimdi eşleştir</button></form>{% endif %}
+    <a class="btn" href="{{ url_for('talep_new') }}">{{ m.icon('plus') }}Yeni talep</a>
+  </div>
+</div>
+
+<div class="kpis">
+  <div class="kpi prime"><div class="k-ic">{{ m.icon('target') }}</div><b class="num">{{ stats.active }}</b><span>Aktif talep</span></div>
+  <div class="kpi {{ 'err' if stats.urgent }}"><div class="k-ic">{{ m.icon('alert') }}</div><b class="num">{{ stats.urgent }}</b><span>Acil müşteri</span></div>
+  <div class="kpi warn"><div class="k-ic">{{ m.icon('sparkles') }}</div><b class="num">{{ stats.new_matches }}</b><span>Gönderilmeyi bekleyen eşleşme</span></div>
+  <div class="kpi ok"><div class="k-ic">{{ m.icon('chat') }}</div><b class="num">{{ stats.sent_month }}</b><span>Bu ay gönderilen ilan</span></div>
+  <div class="kpi violet"><div class="k-ic">{{ m.icon('crown') }}</div><b class="num">{{ stats.won_month }}</b><span>Bu ay kazanılan</span></div>
+</div>
+
+<div class="card gold mb16">
+  <form method="post" action="{{ url_for('talep_new') }}" class="quick-demand">
+    {{ m.csrf_field() }}
+    <div class="qd-main">
+      <label for="qd_req">{{ m.icon('sparkles') }}<b>Hızlı talep</b> <span class="mute">— tek cümle yazın, Enter'a basın</span></label>
+      <textarea id="qd_req" name="request" rows="2" data-demand-parse="#qdPreview" data-fill-name="#qd_name" data-fill-phone="#qd_phone" data-enter-submit
+        placeholder="Ayşe Hanım 0533 222 33 44 — satılık 2+1, 3,5 milyona kadar, Kent Konut veya Tüysüzler, otoparklı site"></textarea>
+      <div class="parse-preview" id="qdPreview" aria-live="polite"></div>
+    </div>
+    <div class="qd-side">
+      <input id="qd_name" name="name" placeholder="Müşteri adı" aria-label="Müşteri adı" autocomplete="off">
+      <input id="qd_phone" name="phone" type="tel" inputmode="tel" placeholder="Telefon" aria-label="Telefon">
+      <button class="btn" type="submit">{{ m.icon('target') }}Kaydet & eşleştir</button>
+    </div>
+  </form>
+</div>
+
+<div class="card tight">
+  <form method="get" class="stack">
+    <div class="tabs" role="tablist">
+      {% for key, label in statuses.items() %}
+      <a class="tab {{ 'active' if status == key }}" href="{{ url_for('talepler', durum=key, q=q or None, danisman=agent_filter) }}">{{ label }} <span class="mute">{{ counts[key] }}</span></a>
+      {% endfor %}
+      <a class="tab {{ 'active' if status == 'all' }}" href="{{ url_for('talepler', durum='all', q=q or None, danisman=agent_filter) }}">Tümü</a>
+    </div>
+    <div class="inline-form">
+      <input type="hidden" name="durum" value="{{ status }}">
+      <input type="search" name="q" value="{{ q }}" placeholder="Müşteri adı, telefon, bölge…" aria-label="Talep ara">
+      {% if filter_agents %}
+      <select name="danisman" data-autosubmit aria-label="Danışman" style="width:auto;min-width:170px">
+        <option value="">Tüm danışmanlar</option>
+        {% for a in filter_agents %}<option value="{{ a.id }}" {{ 'selected' if agent_filter == a.id }}>{{ a.name }}</option>{% endfor %}
+      </select>
+      {% endif %}
+      <button class="btn ghost" type="submit">{{ m.icon('search') }}Ara</button>
+    </div>
+  </form>
+</div>
+
+{% if rows %}
+<div class="dgrid mt16">
+  {% for r in rows %}
+  <article class="dcard {{ 'urgent' if r.urgency == 'acil' and r.status == 'active' }} {{ 'closed' if r.status in ('won', 'lost') }}">
+    <div class="dc-head">
+      <span class="avatar">{{ r.name|initials }}</span>
+      <div class="dc-who">
+        <a class="dc-name" href="{{ url_for('talep_view', did=r.id) }}">{{ r.name }}</a>
+        <div class="mute">{% if r.phone %}{{ r.phone|phone }} · {% endif %}{{ r.agent_name or '-' }} · {{ r.created_at|tdate }}</div>
+      </div>
+      {% if r.status != 'active' %}<span class="badge {{ 'b-ok' if r.status == 'won' else '' }}">{{ statuses[r.status] }}</span>
+      {% elif r.best_score %}{{ crm.score_ring(r.best_score, 'sm') }}{% endif %}
+    </div>
+    {{ crm.chips_row(r.chips) }}
+    <div class="dc-foot">
+      <a class="dc-matches" href="{{ url_for('talep_view', did=r.id) }}">
+        {% if r.match_count %}<b>{{ r.match_count }}</b> eşleşme{% if r.new_count %} · <span class="gold-text">{{ r.new_count }} yeni</span>{% endif %}
+        {% else %}<span class="mute">Henüz eşleşme yok — izleniyor</span>{% endif %}
+      </a>
+      <span class="spacer"></span>
+      {% if r.phone %}<a class="icon-btn sm" href="tel:{{ r.phone }}" aria-label="Ara">{{ m.icon('phone') }}</a>{% endif %}
+      {% if r.wa_url %}<a class="icon-btn sm wa" href="{{ r.wa_url }}" target="_blank" rel="noopener" aria-label="WhatsApp">{{ m.icon('chat') }}</a>{% endif %}
+      <a class="btn sm" href="{{ url_for('talep_view', did=r.id) }}">Aç {{ m.icon('arrow-right', 'sm') }}</a>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card mt16">
+  {% call m.empty('Bu listede talep yok', 'Müşteriden gelen isteği yukarıdaki kutuya tek cümleyle yazın; sistem portföyü anında tarasın.', 'target') %}
+  <a class="btn" href="{{ url_for('talep_new') }}">{{ m.icon('plus') }}İlk talebi ekle</a>{% endcall %}
+</div>
+{% endif %}
+{% endblock %}

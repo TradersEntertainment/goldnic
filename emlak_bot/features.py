@@ -57,6 +57,39 @@ NEIGHBORHOODS: dict[str, str] = {
     "akcay": "sapanca", "kirkpinar": "sapanca",
 }
 
+# Mahalle / site anahtarlarının görünen (Türkçe karakterli) adları
+HOOD_LABELS: dict[str, str] = {
+    "yahya kaptan": "Yahya Kaptan", "yahyakaptan": "Yahya Kaptan", "alikahya": "Alikahya", "tuysuzler": "Tüysüzler",
+    "kabaoglu": "Kabaoğlu", "bagcesme": "Bağçeşme", "topcular": "Topçular", "erenler": "Erenler",
+    "gundogdu": "Gündoğdu", "yeni mahalle": "Yeni Mahalle", "orhan": "Orhan", "sepetci": "Sepetçi",
+    "kozluk": "Kozluk", "cedit": "Cedit", "kemalpasa": "Kemalpaşa", "karabas": "Karabaş", "omeraga": "Ömerağa",
+    "serdar": "Serdar", "turgut": "Turgut", "yenidogan": "Yenidoğan", "yenisehir": "Yenişehir",
+    "akcekent": "Akçekent", "kurucesme": "Kuruçeşme", "tavsantepe": "Tavşantepe", "tepekoy": "Tepeköy",
+    "akmese": "Akmeşe", "arizli": "Arızlı", "gultepe": "Gültepe", "durhasan": "Durhasan", "malta": "Malta",
+    "kocatepe": "Kocatepe", "umuttepe": "Umuttepe", "37 evler": "37 Evler", "fethiye caddesi": "Fethiye Caddesi",
+    "cumhuriyet parki": "Cumhuriyet Parkı", "kent konut": "Kent Konut", "tuana evleri": "Tuana Evleri",
+    "academic life": "Academic Life", "zafira": "Zafira", "erenkaya": "Erenkaya", "vadipark": "Vadipark",
+    "aslantas": "Aslantaş", "kavanium": "Kavanium", "tepe rezidence": "Tepe Rezidence", "toki": "TOKİ",
+    "baglarbasi": "Bağlarbaşı", "hacihasan": "Hacıhasan", "mehmet ali pasa": "Mehmet Ali Paşa",
+    "masukiye": "Maşukiye", "uzunciftlik": "Uzunçiftlik", "arslanbey": "Arslanbey", "sarimese": "Sarımeşe",
+    "kosekoy": "Köseköy", "istasyon": "İstasyon", "karatepe": "Karatepe", "suadiye": "Suadiye",
+    "derbent": "Derbent", "acisu": "Acısu", "ataevler": "Ataevler", "forum anatolia": "Forum Anatolia",
+    "yuvacik": "Yuvacık", "sehitekrem": "Şehitekrem", "bahcecik": "Bahçecik", "seymen": "Seymen",
+    "kullar": "Kullar", "yenikoy": "Yeniköy", "barbaros": "Barbaros", "manar city": "Manar City",
+    "panorama": "Panorama", "bingo": "Bingo", "yarimca": "Yarımca", "esentepe": "Esentepe",
+    "kirazliyali": "Kirazlıyalı", "hereke": "Hereke", "tutunciftlik": "Tütünçiftlik", "mimar sinan": "Mimar Sinan",
+    "tahtali": "Tahtalı", "cenedag": "Çenedağ", "dumlupinar": "Dumlupınar", "cavuslu": "Çavuşlu",
+    "degirmendere": "Değirmendere", "ihsaniye": "İhsaniye", "halidere": "Halıdere", "yazlik": "Yazlık",
+    "hisareyn": "Hisareyn", "tavsancil": "Tavşancıl", "diliskelesi": "Diliskelesi", "pelitli": "Pelitli",
+    "mustafapasa": "Mustafapaşa", "beylikbagi": "Beylikbağı", "bayramoglu": "Bayramoğlu", "akcay": "Akçay",
+    "kirkpinar": "Kırkpınar",
+}
+
+
+def hood_label(key: str) -> str:
+    return HOOD_LABELS.get(key, key.title())
+
+
 KINDS: list[tuple[str, tuple[str, ...]]] = [
     ("fabrika", ("fabrika", "uretim tesisi")),
     ("depo", ("depo", "antrepo")),

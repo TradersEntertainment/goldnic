@@ -1,0 +1,89 @@
+{% import "_macros.html" as m with context %}
+
+{% macro chips_row(chips) -%}
+<div class="chips crit">{% for ic, text, cls in chips %}<span class="badge {{ cls }}">{{ m.icon(ic) }}{{ text }}</span>{% endfor %}</div>
+{%- endmacro %}
+
+{% macro score_ring(score, size='') -%}
+<div class="score {{ 'strong' if score >= 85 }} {{ size }}" style="--p:{{ score }}" title="Uyum puanı %{{ score }}"><b>{{ score }}</b><small>%</small></div>
+{%- endmacro %}
+
+{#- Eşleşme kartı: ilan / daire + gerekçeler + tek tık WhatsApp. show_demand: kartta müşteri bilgisi (ilan → müşteriler görünümü) -#}
+{% macro match_card(mm, show_demand=False, next='') -%}
+{% set c = mm.cand %}
+<article class="mcard {{ 'sent' if mm.status in ('sent', 'interested', 'viewing') }} {{ 'muted' if not mm.active or mm.status in ('dismissed', 'rejected') }}" data-match-card>
+  <div class="mc-media">
+    {% if c.image_url %}<img src="{{ c.image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" data-fallback>{% endif %}
+    <div class="mc-ph">{{ m.icon('building' if c.type == 'listing' else 'door', 'xl') }}</div>
+    {{ score_ring(mm.score) }}
+    <span class="mc-type badge {{ 'b-info' if c.type == 'listing' else 'b-violet' }}">{{ 'Sahibinden' if c.type == 'listing' else c.note }}</span>
+  </div>
+  <div class="mc-body">
+    {% if show_demand %}
+    <div class="mc-client"><a href="{{ url_for('talep_view', did=mm.demand.id) }}"><b>{{ mm.demand.name }}</b></a>{% if mm.demand.urgency == 'acil' %} <span class="badge b-err">ACİL</span>{% endif %}
+      {% if mm.demand.phone %}<a class="mute" href="tel:{{ mm.demand.phone }}">{{ mm.demand.phone|phone }}</a>{% endif %}</div>
+    {% endif %}
+    <h3 class="mc-title" title="{{ c.title }}">{{ c.title }}</h3>
+    <div class="mc-meta">
+      <b class="mc-price">{{ c.price|money }}{% if c.deal_type == 'kiralik' %}<small>/ay</small>{% endif %}</b>
+      {% if c.location %}<span>{{ m.icon('pin', 'sm') }}{{ c.location }}</span>{% endif %}
+    </div>
+    {% if mm.reasons %}<div class="reasons">{% for text, cls in mm.reasons %}<span class="rs {{ cls }}">{{ text }}</span>{% endfor %}</div>{% endif %}
+    <div class="mc-status">
+      <span class="badge {{ {'new': 'b-gold', 'sent': 'b-ok', 'interested': 'b-ok', 'viewing': 'b-info', 'rejected': 'b-err', 'dismissed': ''}[mm.status] }}" data-sent-label-static>{{ mm.status_label }}</span>
+      <span class="badge b-ok" data-sent-label hidden>{{ m.icon('check') }}Gönderildi</span>
+      {% if mm.viewing_at %}<span class="mute">{{ m.icon('calendar', 'sm') }} {{ mm.viewing_at|replace('T', ' ') }}</span>{% endif %}
+      {% if not mm.active %}<span class="badge">Artık yayında değil</span>{% endif %}
+    </div>
+  </div>
+  <div class="mc-actions">
+    {% if mm.active and mm.status not in ('dismissed', 'rejected') %}
+      {% if mm.wa_url %}
+      <a class="btn sm wa" href="{{ mm.wa_url }}" target="_blank" rel="noopener" data-wa-send="{{ url_for('match_status', mid=mm.id) }}?status=sent">{{ m.icon('chat') }}WhatsApp'tan gönder</a>
+      {% else %}
+      <a class="btn sm ghost" href="{{ url_for('talep_view', did=mm.demand_id) }}#duzenle" title="Müşterinin telefonu yok">{{ m.icon('phone') }}Telefon ekle</a>
+      {% endif %}
+      {% if c.type == 'listing' and c.url %}<a class="btn sm ghost" href="{{ c.url }}" target="_blank" rel="noopener">İlan {{ m.icon('external', 'sm') }}</a>
+      {% else %}<a class="btn sm ghost" href="{{ c.url }}">Daire {{ m.icon('arrow-right', 'sm') }}</a>{% endif %}
+      <details class="mc-more">
+        <summary class="btn sm ghost" aria-label="Diğer işlemler">{{ m.icon('dots') }}</summary>
+        <div class="mc-menu">
+          {% for st, label, ic in [('interested', 'Müşteri ilgileniyor', 'heart'), ('rejected', 'Müşteri beğenmedi', 'x'), ('dismissed', 'Uygun değil — gizle', 'archive')] %}
+          <form method="post" action="{{ url_for('match_status', mid=mm.id) }}">{{ m.csrf_field() }}<input type="hidden" name="status" value="{{ st }}"><input type="hidden" name="next" value="{{ next }}"><button class="link-btn" type="submit">{{ m.icon(ic) }}{{ label }}</button></form>
+          {% endfor %}
+          <form method="post" action="{{ url_for('match_status', mid=mm.id) }}" class="mc-viewing">{{ m.csrf_field() }}<input type="hidden" name="status" value="viewing"><input type="hidden" name="next" value="{{ next }}">
+            <label>{{ m.icon('calendar') }}Gösterim</label><input type="datetime-local" name="viewing_at" required aria-label="Gösterim zamanı"><button class="btn xs" type="submit">Kaydet</button></form>
+        </div>
+      </details>
+    {% else %}
+      <form method="post" action="{{ url_for('match_status', mid=mm.id) }}">{{ m.csrf_field() }}<input type="hidden" name="status" value="new"><input type="hidden" name="next" value="{{ next }}"><button class="btn sm ghost" type="submit">{{ m.icon('refresh') }}Geri al</button></form>
+    {% endif %}
+  </div>
+</article>
+{%- endmacro %}
+
+{#- Talep ölçütleri formu (yeni talep ve düzenleme) -#}
+{% macro criteria_fields(values, kinds, amenity_labels, room_options, popular, urgency_labels, deal_labels, prefix='n') -%}
+<div class="form-grid">
+  <div class="full"><label>İşlem</label>
+    <div class="seg">{% for k, label in deal_labels.items() %}<label class="seg-opt"><input type="radio" name="deal_type" value="{{ k }}" {{ 'checked' if values.get('deal_type') == k }}><span>{{ label }}</span></label>{% endfor %}</div></div>
+  <div class="full"><label>Tür</label>
+    <div class="checks">{% for k, label in kinds.items() %}<label class="pill"><input type="checkbox" name="kinds" value="{{ k }}" {{ 'checked' if k in (values.get('kinds') or []) }}><span>{{ label }}</span></label>{% endfor %}</div></div>
+  <div class="full"><label>Oda sayısı</label>
+    <div class="checks">{% for r in room_options %}<label class="pill"><input type="checkbox" name="rooms" value="{{ r }}" {{ 'checked' if r in (values.get('rooms') or []) }}><span>{{ r }}</span></label>{% endfor %}
+      <select name="rooms_min" aria-label="En az oda" class="pill-select">
+        <option value="">En az: —</option>
+        {% for n in range(1, 6) %}<option value="{{ n }}" {{ 'selected' if values.get('rooms_min')|string == n|string }}>En az {{ n }}+1</option>{% endfor %}
+      </select></div></div>
+  <div><label for="{{ prefix }}_bmin">Bütçe alt (₺)</label><input id="{{ prefix }}_bmin" name="budget_min" inputmode="decimal" value="{{ values.get('budget_min', '') }}" placeholder="30 bin"></div>
+  <div><label for="{{ prefix }}_bmax">Bütçe üst (₺)</label><input id="{{ prefix }}_bmax" name="budget_max" inputmode="decimal" value="{{ values.get('budget_max', '') }}" placeholder="35 bin / 3,5 milyon"></div>
+  <div class="full"><label for="{{ prefix }}_places">Bölge / mahalle / site</label>
+    <input id="{{ prefix }}_places" name="places" value="{{ values.get('places', '') }}" placeholder="Yahya Kaptan, Alikahya, Kartepe" autocomplete="off">
+    <div class="chips mt8">{% for pl in popular %}<button type="button" class="chip xs" data-append-to="#{{ prefix }}_places" data-value="{{ pl }}">+ {{ pl }}</button>{% endfor %}</div></div>
+  <div class="full"><label>Olmazsa olmazlar</label>
+    <div class="checks">{% for k, label in amenity_labels.items() %}<label class="pill"><input type="checkbox" name="amenities" value="{{ k }}" {{ 'checked' if k in (values.get('amenities') or []) }}><span>{{ label }}</span></label>{% endfor %}
+      <label class="pill warn"><input type="checkbox" name="unfurnished" value="1" {{ 'checked' if values.get('unfurnished') }}><span>Eşyasız olsun</span></label></div></div>
+  <div class="full"><label>Aciliyet</label>
+    <div class="seg">{% for k, label in urgency_labels.items() %}<label class="seg-opt {{ 'err' if k == 'acil' }}"><input type="radio" name="urgency" value="{{ k }}" {{ 'checked' if values.get('urgency') == k }}><span>{{ label }}</span></label>{% endfor %}</div></div>
+</div>
+{%- endmacro %}

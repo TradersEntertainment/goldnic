@@ -37,6 +37,10 @@ def main() -> None:
     db = Database(cfg.db_path)
     logging.getLogger("emlak_bot").info("Veritabanı: %s", cfg.db_path)
 
+    # Yeni Sahibinden ilanı gelince müşteri talepleriyle otomatik eşleştirme (web kapalı olsa da)
+    from . import crm
+    crm.install(db, cfg)
+
     # Sahibinden portföy ilk yükleme (64 ilan) & arka plan otomatik senkronizasyon (0 server maliyeti)
     from .scraper import seed_initial_listings, start_auto_sync_thread
     try:
@@ -68,6 +72,7 @@ def main() -> None:
 
     sched = Scheduler(db, cfg.tz)
     sched.add("tufe", cfg.tufe_refresh_hour, 5, lambda: jobs.tufe_job(db, cfg))
+    sched.add("matching", cfg.reminder_hour, 20, lambda: jobs.matching_job(db, cfg))
     if not cfg.bot_token:
         sched.add("daily", cfg.reminder_hour, 0,
                   lambda: asyncio.run(daily_job(db, messenger=None, inactivity_days=cfg.inactivity_days, cfg=cfg)))
