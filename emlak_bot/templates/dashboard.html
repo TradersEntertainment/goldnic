@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>{% if owner %}Ofis paneli{% else %}Portföyüm{% endif %}</h1>
+<div class="grid">
+  <div class="stat"><b>{{ stats.total }}</b><span>Mülk</span></div>
+  <div class="stat"><b>{{ stats.soon }}</b><span>30 gün içinde yenileme</span></div>
+  <div class="stat"><b class="{{ 'bad' if stats.overdue else '' }}">{{ stats.overdue }}</b><span>Geciken yenileme</span></div>
+  <div class="stat"><b class="{{ 'warn' if stats.missing else '' }}">{{ stats.missing }}</b><span>Zam oranı girilmemiş</span></div>
+  <div class="stat"><b>{{ stats.rent|money }}</b><span>Aylık toplam kira</span></div>
+</div>
+
+{% if owner %}
+<div class="card">
+  <h2>Ekip</h2>
+  <table><tr><th>Emlakçı</th><th>Mülk</th><th>30 gün içinde</th><th>Son aktif</th><th></th></tr>
+  {% for u in team %}<tr>
+    <td>{{ u.name }}{% if u.role == 'owner' %} <span class="mute">(sahip)</span>{% endif %}</td>
+    <td>{{ u.count }}</td><td>{{ u.soon }}</td>
+    <td>{{ (u.last_active or '')[:16].replace('T',' ') or 'hiç' }}</td>
+    <td><a href="{{ url_for('dashboard', agent=u.id) }}">Portföyü gör</a></td></tr>{% endfor %}
+  </table>
+  {% for u in inactive %}<p class="warn">😴 {{ u.name }} uzun süredir sistemi kullanmadı.</p>{% endfor %}
+  {% if only %}<p><a href="{{ url_for('dashboard') }}">← Tüm portföy</a></p>{% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Portföy</h2>
+  {% if not rows %}<p class="mute">Kayıt yok.</p>{% else %}
+  <table><tr><th>#</th><th>Mülk</th>{% if owner %}<th>Emlakçı</th>{% endif %}<th>Kiracı</th><th>Kira</th><th>Yenileme</th><th>Geçen yıl</th><th>Bu yıl</th></tr>
+  {% for r in rows %}<tr>
+    <td>{{ r.id }}</td><td><a href="{{ url_for('property_view', pid=r.id) }}">{{ r.title }}</a></td>
+    {% if owner %}<td>{{ r.agent }}</td>{% endif %}
+    <td>{{ r.tenant_name or '-' }}</td><td>{{ r.rent|money }}</td>
+    <td class="{{ 'bad' if r.days < 0 else ('warn' if r.days <= 30 else '') }}">{{ r.renewal_date|tdate }} ({{ r.days if r.days >= 0 else (-r.days ~ ' g geçti') }}{{ ' g' if r.days >= 0 }})</td>
+    <td>{{ r.last_increase_pct|pct }}</td>
+    <td>{% if r.planned_rent %}{{ r.planned_pct|pct }}{% elif r.days <= 30 %}<span class="warn">girilmedi</span>{% else %}-{% endif %}</td>
+  </tr>{% endfor %}</table>{% endif %}
+</div>
+{% endblock %}

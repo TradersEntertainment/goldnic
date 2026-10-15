@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Emlak Portföy{% endblock %}</title>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--ink:#1c2430;--mute:#6b7685;--pri:#1f6feb;--ok:#1a7f37;--warn:#b7791f;--err:#cf222e;--line:#e3e8ef}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:#14213d;color:#fff;padding:10px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+header a{color:#fff;text-decoration:none;opacity:.85}header a:hover{opacity:1}header .sp{flex:1}
+header form{display:inline}header button{background:none;border:1px solid #ffffff55;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer}
+main{max-width:1050px;margin:20px auto;padding:0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px;overflow-x:auto}
+h1{font-size:22px;margin:0 0 12px}h2{font-size:17px;margin:0 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}.stat b{display:block;font-size:22px}.stat span{color:var(--mute);font-size:13px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);font-size:14px;white-space:nowrap}th{color:var(--mute);font-weight:600}
+a{color:var(--pri)}.bad{color:var(--err);font-weight:600}.warn{color:var(--warn);font-weight:600}.good{color:var(--ok)}.mute{color:var(--mute)}
+label{display:block;margin:10px 0 3px;font-weight:600;font-size:13px}
+input,textarea{width:100%;padding:9px;border:1px solid #cfd6df;border-radius:7px;font:inherit}
+.btn{background:var(--pri);color:#fff;border:0;border-radius:7px;padding:9px 16px;font:inherit;cursor:pointer;margin-top:12px}
+.btn.alt{background:#fff;color:var(--ink);border:1px solid #cfd6df}.btn.danger{background:var(--err)}
+.flash{padding:10px 14px;border-radius:8px;margin-bottom:12px}.flash.ok{background:#dafbe1;color:#0a3d18}.flash.err{background:#ffebe9;color:#82071e}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:700px){.two{grid-template-columns:1fr}}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:6px 10px}.kv div:nth-child(odd){color:var(--mute)}
+.login{max-width:360px;margin:12vh auto}
+</style>
+</head>
+<body>
+{% if g.user %}
+<header>
+  <strong>🏢 Emlak Portföy</strong>
+  <a href="{{ url_for('dashboard') }}">Panel</a>
+  <a href="{{ url_for('add') }}">+ Mülk ekle</a>
+  {% if g.user.role == 'owner' %}<a href="{{ url_for('activity') }}">Aktivite</a>{% endif %}
+  <span class="sp"></span>
+  <a href="{{ url_for('account') }}">{{ g.user.name }}</a>
+  <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button>Çıkış</button></form>
+</header>
+{% endif %}
+<main>
+{% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}{% endwith %}
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>

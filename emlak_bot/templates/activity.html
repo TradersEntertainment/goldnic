@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="card"><h1>Son işlemler</h1>
+<table><tr><th>Zaman</th><th>Kişi</th><th>İşlem</th><th>Mülk</th><th>Detay</th></tr>
+{% for r in rows %}<tr><td>{{ r.ts[:16].replace('T',' ') }}</td><td>{{ r.user_name }}</td><td>{{ r.action }}</td>
+<td>{% if r.property_id %}<a href="{{ url_for('property_view', pid=r.property_id) }}">#{{ r.property_id }}</a>{% endif %}</td><td>{{ r.detail or '' }}</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

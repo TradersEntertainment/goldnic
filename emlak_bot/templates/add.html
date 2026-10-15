@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="card" style="max-width:560px">
+  <h1>Yeni mülk</h1>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>Mülk adı / adres *</label><input name="title" value="{{ f.get('title','') }}" required>
+    <label>Ev sahibi</label><input name="landlord_name" value="{{ f.get('landlord_name','') }}">
+    <label>Ev sahibi telefon</label><input name="landlord_phone" value="{{ f.get('landlord_phone','') }}">
+    <label>Kiracı</label><input name="tenant_name" value="{{ f.get('tenant_name','') }}">
+    <label>Kiracı telefon</label><input name="tenant_phone" value="{{ f.get('tenant_phone','') }}">
+    <label>Güncel aylık kira (₺) *</label><input name="rent" value="{{ f.get('rent','') }}" required>
+    <label>Sonraki yenileme tarihi *</label><input type="date" name="renewal_date" value="{{ f.get('renewal_date','') }}" required>
+    <label>Geçen sene artış (%)</label><input name="last_increase_pct" value="{{ f.get('last_increase_pct','') }}">
+    <label>Not</label><textarea name="notes" rows="2">{{ f.get('notes','') }}</textarea>
+    <button class="btn">Kaydet</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>🏠 {{ p.title }} <span class="mute">#{{ p.id }}</span></h1>
+<div class="two">
+  <div class="card">
+    <h2>Bilgiler</h2>
+    <div class="kv">
+      <div>Sorumlu emlakçı</div><div>{{ agent.name if agent else '-' }}</div>
+      <div>Ev sahibi</div><div>{{ p.landlord_name or '-' }} {{ p.landlord_phone or '' }}</div>
+      <div>Kiracı</div><div>{{ p.tenant_name or '-' }} {{ p.tenant_phone or '' }}</div>
+      <div>Mevcut kira</div><div><b>{{ p.rent|money }}</b></div>
+      <div>Yenileme</div><div class="{{ 'bad' if days < 0 else ('warn' if days <= 30 else '') }}"><b>{{ p.renewal_date|tdate }}</b> ({{ days if days >= 0 else -days }} gün {{ 'kaldı' if days >= 0 else 'geçti' }})</div>
+      <div>Geçen sene artış</div><div>{{ p.last_increase_pct|pct }}{% if p.last_increase_amount %} (+{{ p.last_increase_amount|money }}){% endif %}</div>
+      <div>Bu sene artış</div><div>{% if p.planned_rent %}<b>{{ p.planned_pct|pct }}</b> → <b>{{ p.planned_rent|money }}</b>{% else %}<span class="warn">girilmedi</span>{% endif %}</div>
+      {% if tufe is not none %}<div>TÜFE sınırı</div><div>{{ tufe|pct }} → azami {{ cap|money }}</div>{% endif %}
+      {% if p.notes %}<div>Not</div><div>{{ p.notes }}</div>{% endif %}
+    </div>
+    {% if over_cap %}<p class="bad">🚨 Planlanan artış yasal TÜFE sınırını aşıyor.</p>{% endif %}
+  </div>
+  <div class="card">
+    <h2>Bu seneki artışı gir</h2>
+    <form method="post" action="{{ url_for('property_zam', pid=p.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label>Oran (%30) veya yeni kira tutarı (45000)</label><input name="value" required>
+      <button class="btn">Kaydet</button>
+    </form>
+    <h2 style="margin-top:22px">Sözleşme yenilendi</h2>
+    <form method="post" action="{{ url_for('property_renew', pid=p.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label>Yeni kira (boşsa planlanan kullanılır)</label><input name="value" placeholder="{{ p.planned_rent|int if p.planned_rent else '' }}">
+      <button class="btn">Yenilendi olarak kaydet</button>
+    </form>
+  </div>
+</div>
+{% if hist %}<div class="card"><h2>Kira geçmişi</h2>
+<table><tr><th>Tarih</th><th>Eski</th><th>Yeni</th><th>Artış</th></tr>
+{% for h in hist %}<tr><td>{{ h.effective_date|tdate }}</td><td>{{ h.old_rent|money }}</td><td>{{ h.new_rent|money }}</td><td>{{ h.pct|pct }}</td></tr>{% endfor %}</table></div>{% endif %}
+<form method="post" action="{{ url_for('property_delete', pid=p.id) }}" onsubmit="return confirm('Mülk arşivlensin mi?')">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="btn danger">Arşivle</button>
+  <a class="btn alt" style="text-decoration:none;display:inline-block" href="{{ url_for('dashboard') }}">← Geri</a>
+</form>
+{% endblock %}
