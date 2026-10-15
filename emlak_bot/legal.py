@@ -11,6 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from .db import now_iso
 from . import features as F
 from . import law as L
 from . import rent as R
@@ -82,7 +83,7 @@ def ack(db, user_id: int, pid: int, kind: str, ref: str, action: str, notes: str
         "INSERT INTO legal_acks (property_id, kind, ref, action, notes, user_id, created_at) VALUES (?,?,?,?,?,?,?)"
         " ON CONFLICT(property_id, kind, ref) DO UPDATE SET action=excluded.action, notes=excluded.notes,"
         " user_id=excluded.user_id, created_at=excluded.created_at",
-        (pid, kind, ref, action, notes or None, user_id, datetime.now().isoformat(timespec="seconds")),
+        (pid, kind, ref, action, notes or None, user_id, now_iso()),
     )
 
 
@@ -104,7 +105,7 @@ def add_commitment(db, user_id: int, p, signed: date, eviction: date, tenant_nam
         "INSERT INTO eviction_commitments (property_id, tenant_name, signed_date, eviction_date, status, notes,"
         " created_by, created_at) VALUES (?,?,?,?, 'active', ?,?,?)",
         (p["id"], tenant_name or p["tenant_name"], signed.isoformat(), eviction.isoformat(), notes or None, user_id,
-         datetime.now().isoformat(timespec="seconds")),
+         now_iso()),
     )
     db.log(user_id, "taahhut_ekledi", p["id"], f"İmza {R.fmt_date(signed)}, tahliye {R.fmt_date(eviction)}")
     return cid
@@ -298,7 +299,7 @@ async def run_legal_alerts(db, messenger=None, today: date | None = None, group_
             delivered = send_whatsapp_notification(wa_target, plain, cfg) or delivered
         if delivered or (messenger is None and not wa_target):
             db.execute("INSERT OR IGNORE INTO legal_alert_log (property_id, kind, ref, stage, sent_at) VALUES (?,?,?,?,?)",
-                       (p["id"], a.kind, a.ref, a.stage, datetime.now().isoformat(timespec="seconds")))
+                       (p["id"], a.kind, a.ref, a.stage, now_iso()))
             sent += 1
     return sent
 

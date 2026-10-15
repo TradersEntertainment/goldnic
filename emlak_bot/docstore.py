@@ -8,6 +8,7 @@ import sqlite3
 from datetime import date, datetime
 from typing import Any
 
+from .db import now_turkey
 from . import documents as D
 from .law import add_months
 from .validators import clean_tc, iban_clean
@@ -61,7 +62,7 @@ def verify_code(secret: str, doc_no: str, kind: str, payload: dict) -> str:
 def create(db, *, kind: str, property_id: int | None, payload: dict, render, user_id: int, secret: str,
            meta_kwargs: dict | None = None) -> dict:
     """Belge numarası ayırır, PDF'i üretir ve kaydeder. render(meta) -> bytes."""
-    now = datetime.now()
+    now = now_turkey()
     for _ in range(5):
         with db.connection() as c:
             doc_no = _next_doc_no(c, now.year)

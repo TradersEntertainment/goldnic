@@ -30,7 +30,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from . import rent as R
 from . import services, texts
 from .config import Config
-from .db import Database
+from .db import Database, TURKEY_TZ
 from .messenger import send_telegram_sync
 from .reminders import collect_issues, get_tufe
 
@@ -130,14 +130,18 @@ def format_phone(phone: str | None) -> str:
 
 
 def format_dt(value: str | None) -> str:
-    """ISO tarih-saat -> 15.10.2026 14:30."""
+    """ISO tarih-saat -> 15.10.2026 14:30 (Türkiye saati ile)."""
     if not value:
         return "-"
     try:
-        d = datetime.fromisoformat(value)
+        raw = value.replace("Z", "+00:00") if value.endswith("Z") else value
+        d = datetime.fromisoformat(raw)
+        if d.tzinfo is not None:
+            d = d.astimezone(TURKEY_TZ)
     except ValueError:
         return value
     return d.strftime("%d.%m.%Y %H:%M")
+
 
 
 def plain_number(x: float | None) -> str:

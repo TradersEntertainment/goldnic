@@ -103,3 +103,35 @@ def test_seed_admin_and_direct_login(env):
     assert r.status_code == 302
     page = c.get("/").get_data(as_text=True)
     assert "Ofis paneli" in page
+
+
+def test_format_dt_turkey_timezone():
+    from emlak_bot.web import format_dt
+
+    assert format_dt(None) == "-"
+    assert format_dt("") == "-"
+    assert format_dt("gecersiz_tarih") == "gecersiz_tarih"
+
+    # Naive Turkey timestamp
+    assert format_dt("2026-10-15T21:48:12") == "15.10.2026 21:48"
+
+    # UTC timestamps with 'Z' or '+00:00' should be converted to Turkey time (+3 hours)
+    assert format_dt("2026-10-15T18:48:12Z") == "15.10.2026 21:48"
+    assert format_dt("2026-10-15T18:48:12+00:00") == "15.10.2026 21:48"
+
+    # Explicit Turkey timezone offset
+    assert format_dt("2026-10-15T21:48:12+03:00") == "15.10.2026 21:48"
+
+
+def test_now_iso_turkey_timezone():
+    from emlak_bot.db import TURKEY_TZ, now_iso, now_turkey
+    from datetime import datetime
+
+    expected_hour = datetime.now(TURKEY_TZ).hour
+    iso_val = now_iso()
+    dt_val = now_turkey()
+
+    assert dt_val.hour == expected_hour
+    assert int(iso_val[11:13]) == expected_hour
+    assert len(iso_val) == 19  # YYYY-MM-DDTHH:MM:SS
+

@@ -1,11 +1,16 @@
 """SQLite veri katmanı."""
 from __future__ import annotations
 
+import os
 import secrets
 import sqlite3
 from contextlib import closing, contextmanager
 from datetime import datetime
 from typing import Any, Iterable, Iterator
+from zoneinfo import ZoneInfo
+
+TURKEY_TZ = ZoneInfo(os.getenv("TIMEZONE", "Europe/Istanbul"))
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -316,8 +321,15 @@ USER_REF_COLUMNS: list[tuple[str, str]] = [
 ]
 
 
+def now_turkey() -> datetime:
+    """Türkiye yerel saatinde (Europe/Istanbul, UTC+3) naive datetime döner."""
+    return datetime.now(TURKEY_TZ).replace(tzinfo=None)
+
+
 def now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    """Türkiye yerel saatinde ISO biçiminde zaman damgası (YYYY-MM-DDTHH:MM:SS)."""
+    return now_turkey().isoformat(timespec="seconds")
+
 
 
 def ensure_columns(c: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:

@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
+import time as _sys_time
 from datetime import time
+
+os.environ.setdefault("TZ", "Europe/Istanbul")
+if hasattr(_sys_time, "tzset"):
+    try:
+        _sys_time.tzset()
+    except Exception:
+        pass
 
 from telegram.ext import Application, ContextTypes
 

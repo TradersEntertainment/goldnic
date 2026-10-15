@@ -14,6 +14,7 @@ from datetime import date, datetime
 from typing import Callable
 from urllib.parse import urljoin
 
+from .db import now_iso
 from .law import CpiRate, add_months, announcement_date, period_of, shift_period
 
 log = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ class ParsedCpi:
 
 # ---------------------------------------------------------------- saklama
 def ensure_builtin(db) -> None:
-    now = datetime.now().isoformat(timespec="seconds")
+    now = now_iso()
     rows = [(p, v, None, announcement_for(p).isoformat(), "builtin", now) for p, v in BUILTIN_AVG12.items()]
     with db.connection() as c:
         c.executemany(
@@ -91,7 +92,7 @@ def upsert_rate(db, period: str, avg12: float, source: str, annual: float | None
         " ON CONFLICT(period) DO UPDATE SET avg12=excluded.avg12, annual=COALESCE(excluded.annual, annual),"
         " announced_on=excluded.announced_on, source=excluded.source, fetched_at=excluded.fetched_at",
         (period, round(avg12, 2), annual, (announced_on or announcement_for(period)).isoformat(), source,
-         datetime.now().isoformat(timespec="seconds")),
+         now_iso()),
     )
     return True
 
@@ -262,7 +263,7 @@ def refresh(db, today: date | None = None, *, get: HttpGet | None = None, evds_k
         msg = f"{SOURCE_LABELS[source]}: {', '.join(stored) or 'yeni veri yok'}"
     else:
         msg = "; ".join(errors) or "Yeni veri yok"
-    db.set_setting("tufe_last_attempt", datetime.now().isoformat(timespec="seconds"))
+    db.set_setting("tufe_last_attempt", now_iso())
     db.set_setting("tufe_last_result", msg[:300])
     (log.info if source else log.warning)("TÜFE güncelleme: %s", msg)
     return RefreshResult(ok=source is not None, source=source, periods=stored, message=msg)
