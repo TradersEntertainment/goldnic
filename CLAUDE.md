@@ -73,12 +73,38 @@ Claude Code olarak bu projeyi geliştirirken aşağıdaki prensiplerden **asla t
 
 ---
 
+## 🧭 UYGULANAN MİMARİ (kod haritası)
+
+| Alan | Dosyalar |
+|---|---|
+| Çekirdek | `db.py` (şema + `MIGRATION_COLUMNS` ile geriye dönük ALTER, WAL), `web.py` (`create_app`, `WebContext`), `services.py`, `config.py`, `main.py` (bot + web + `scheduler.py`) |
+| PWA & arama | `web_pwa.py` (manifest, `/sw.js`, `/offline`, `/api/spotlight`, `/takip`), `search.py`, `agenda.py` (Takip Merkezi sağlayıcıları), `static/app.js`, `static/app.css` |
+| Kira hukuku | `law.py` (saf TBK kuralları), `tufe.py` (TÜİK/EVDS + yerleşik tablo), `legal.py` (radar, uyarılar), `web_law.py` |
+| Belgeler | `documents.py` (reportlab PDF), `docstore.py` (numara, HMAC doğrulama kodu, saklama), `validators.py` (T.C., IBAN, yazıyla tutar), `web_docs.py` |
+| Matching CRM | `features.py` (başlıktan oda/tür/mahalle), `matching.py` (talep ayrıştırma + puan), `crm.py` (talepler, eşleşmeler, bildirim), `performance.py`, `web_crm.py` |
+| Yedek & güvenlik | `backup.py` (şifreli yedek + `python -m emlak_bot.backup` CLI), `web_backup.py` (`/yedek`, denetim izi `/api/iz`), `jobs.py` (zamanlanmış görevler) |
+
+**Modül kuralları**
+- Yeni web modülü `register(app, ctx)` fonksiyonuyla `create_app` sonunda kaydedilir; menü `ctx.add_nav`, hızlı ekle
+  `ctx.add_quick`, Spotlight komutu `ctx.add_action` / sağlayıcı `ctx.spotlight_providers`, Takip Merkezi
+  `@agenda.provider(...)` ile eklenir.
+- Kancalar: `app.extensions["gn_property_panels"]` (mülk sayfası paneli; `(sıra, html)` dönerek öne alınabilir),
+  `["gn_listing_badges"]` (ilan rozeti, 3. eleman bağlantı), `["gn_on_vacant"]` (kiracı çıktı). Sahibinden senkronu
+  sonrası: `scraper.SYNC_HOOKS`.
+- CSP `script-src 'self'`: şablonlarda satır içi `<script>`/`onclick` YOK; davranışlar `data-*` öznitelikleriyle `app.js`'te.
+- Zamanlanmış görevler İstanbul saatine göre `Scheduler` ile (yeniden başlatmaya dayanıklı, kaçırılanı telafi eder):
+  `daily` 09:00 hatırlatma, `matching` 09:20, `tufe` 11:05, `backup` 03:00.
+- Kullanıcıya görünen tüm metinler Türkçe; tarihler `GG.AA.YYYY`, tutarlar `32.000 ₺`.
+- Danışman yalnız kendi portföyünü/müşterilerini görür (`ctx.scope_agent`, `ctx.get_prop`); her yeni sorgu buna uymalı.
+
+---
+
 ## 🛠️ GELİŞTİRME & KOMUT YÖNERGESİ
 
 ### Geliştirme Ortamı Komutları:
 ```bash
-# Bağımlılıkları kontrol et ve çalıştır
-pip install -r requirements.txt
+# Bağımlılıkları kontrol et ve çalıştır (testler için requirements-dev.txt)
+pip install -r requirements-dev.txt
 
 # Tüm testleri çalıştır (Tüm testler istisnasız geçmelidir)
 pytest -o pythonpath=.
@@ -88,6 +114,8 @@ pytest -o pythonpath=. tests/test_core.py
 pytest -o pythonpath=. tests/test_web.py
 pytest -o pythonpath=. tests/test_listings.py
 pytest -o pythonpath=. tests/test_whatsapp_and_bulk.py
+pytest -o pythonpath=. tests/test_pwa.py tests/test_law.py tests/test_documents.py
+pytest -o pythonpath=. tests/test_crm.py tests/test_backup.py tests/test_improvements.py
 
 # Uygulamayı yerelde başlat
 python -m emlak_bot.main

@@ -3,3 +3,8 @@
 *.db
 __pycache__/
 .pytest_cache/
+*.db-wal
+*.db-shm
+backups/
+*.gnbak
+*.db.gz

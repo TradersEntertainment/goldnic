@@ -1,73 +1,117 @@
-# Emlak Portföy Asistanı (Telegram botu + web paneli)
+# Gold Nicomedia OS — Gayrimenkul İşletim Sistemi
 
-Emlakçıların portföyünü tek yerde toplar; kira yenileme zamanı geldiğinde "geçen sene % kaç arttı, bu sene % kaç artacak" bilgisini **hem emlakçıya hem ofis sahibine** otomatik gönderir. Emlakçı ayrılırsa portföy kaybolmaz, tek komutla devredilir. Aynı veriye Telegram'dan ya da **kullanıcı adı + şifre ile web panelinden** erişilir.
+Kocaeli / İzmit'te **Gold Nicomedia** (ofis sahibi: Diren Doğan) için geliştirilen, kira takibinden müşteri
+eşleştirmeye kadar ofisin tüm akışını tek yerde toplayan web paneli + Telegram botu.
+
+| Modül | Ne yapar |
+|---|---|
+| **PWA arayüzü** | Ana ekrana eklenebilir, tam ekran mobil uygulama; alt menü, `Ctrl/⌘ + K` Spotlight araması, Takip Merkezi |
+| **Türk kira hukuku** | TÜİK/TCMB'den TÜFE 12 aylık ortalaması (yasal artış tavanı, kuruşu kuruşuna), tahliye taahhüdü radarı, 5. yıl kira tespiti, 10. yıl tahliye hakkı |
+| **Resmi belge motoru** | Tek tıkla PDF Kira Sözleşmesi, Tahliye Taahhütnamesi, Teslim/Demirbaş Tutanağı; doğrulama kodu, WhatsApp/Telegram paylaşımı |
+| **Müşteri Talep Havuzu** | "3+1 kiralık, 30-35 bin, Yahya Kaptan, acil" cümlesini anlar; Sahibinden ilanları ve boşalan dairelerle otomatik eşleştirir, tek tıkla WhatsApp'tan gönderir; performans panosu |
+| **Şifreli gece yedeği** | Her gece AES-256 şifreli veritabanı yedeği Diren Doğan'ın kişisel Telegram'ına (+ isteğe bağlı S3/R2); denetim izi |
 
 ---
-## 1) Telegram botunu oluştur
-1. Telegram'da `@BotFather` → `/newbot` → isim ve kullanıcı adı ver → **token**'ı kopyala.
-2. `@userinfobot`'a `/start` yaz → sana **sayısal Telegram ID**'ni verir (ofis sahibi ID'si).
 
-## 2) Railway'e kurulum
-1. [railway.com](https://railway.com) → **New Project → Deploy from GitHub repo** → bu repoyu (`TradersEntertainment/goldnic`) seç.
-2. Servise tıkla → **Settings → Volumes → + New Volume**, mount path: `/data`
+## Hızlı başlangıç (Railway)
+1. [railway.com](https://railway.com) → **New Project → Deploy from GitHub repo** → bu repo.
+2. **Settings → Volumes → + New Volume**, mount path: `/data`  
    (Veritabanı SQLite dosyasıdır; volume olmazsa her deploy'da **tüm veri silinir**.)
-3. **Variables** sekmesine şunları ekle:
+3. **Variables** — en az şunlar:
 
 | Değişken | Değer |
 |---|---|
-| `TELEGRAM_BOT_TOKEN` | BotFather'dan aldığın token |
-| `OWNER_TELEGRAM_IDS` | Senin Telegram ID'n (birden fazlaysa virgülle) |
+| `SECRET_KEY` | Uzun rastgele metin (`python -c "import secrets;print(secrets.token_hex(32))"`) — sabit kalmalı |
 | `DB_PATH` | `/data/emlak.db` |
-| `SECRET_KEY` | Uzun rastgele metin (`python -c "import secrets;print(secrets.token_hex(32))"`) |
-| `WEB_URL` | Adım 4'te alacağın adres, örn. `https://goldnic-production.up.railway.app` |
-| `TIMEZONE` | `Europe/Istanbul` (isteğe bağlı) |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | Ofis sahibinin web girişi |
+| `WEB_URL` | Railway domain'i, ör. `https://goldnic-production.up.railway.app` |
+| `TELEGRAM_BOT_TOKEN` | `@BotFather`'dan |
+| `OWNER_TELEGRAM_IDS` | Diren Doğan'ın sayısal Telegram ID'si (`@userinfobot`) — gece yedeği buraya gider |
+| `BACKUP_PASSPHRASE` | Yedek şifresi (uzun bir cümle; **kaybetmeyin**) |
 
-4. **Settings → Networking → Generate Domain** ile herkese açık adres al, `WEB_URL`'ye yaz.
-5. Deploy bitince **Deployments → Logs**'ta "Web paneli port ... çalışıyor" görmelisin.
+Tüm seçenekler açıklamalarıyla [`.env.example`](.env.example) dosyasında (TÜFE/EVDS, belge başlığı, komisyon
+oranları, S3/R2, WhatsApp Cloud API).
+
+4. **Settings → Networking → Generate Domain**. Deploy bitince loglarda `Web paneli port … çalışıyor` görülür.
 
 > Sadece **tek** replika çalıştırın (Telegram botu aynı anda iki yerde çalışamaz).
 
-## 3) Kullanıcılar nasıl giriş yapar
-1. Ofis sahibi bota `/start` yazar → otomatik sahip olarak kaydolur (`OWNER_TELEGRAM_IDS` ayarlıysa).
-   **ID bilinmiyorsa:** `OWNER_TELEGRAM_IDS`'i boş bırakıp Railway'e `SETUP_CODE=uzun-gizli-bir-kod` ekle. Sahip bota özelden `/kurulum uzun-gizli-bir-kod` yazar → sahip olur. Sonra `SETUP_CODE` değişkenini sil.
-2. `/davet` → kod üretir. Emlakçı bota `/katil KOD` yazar.
-3. Herkes (sahip dahil) bota `/sifre kullaniciadi` yazar → bot **kullanıcı adı + rastgele şifre** verir.
-4. `WEB_URL` adresinden giriş yapılır; şifre "Hesabım" sayfasından değiştirilir.
-5. Şifre unutulursa bota tekrar `/sifre` yazılır (yeni şifre üretir).
+## Kullanıcılar
+1. Ofis sahibi `ADMIN_USERNAME` ile web'e girer; Telegram'da bota `/start` yazar (`OWNER_TELEGRAM_IDS` ayarlıysa sahip olur).
+   ID bilinmiyorsa `SETUP_CODE=uzun-gizli-kod` ekleyip bota `/kurulum uzun-gizli-kod` yazılır, sonra değişken silinir.
+2. Danışman eklemek: web → **Ekip** (kullanıcı adı + şifre) ya da Telegram'da `/davet` → danışman `/katil KOD`.
+3. Telegram kullanıcıları `/sifre kullaniciadi` ile web şifresi alır.
+4. Danışman ayrılınca portföyü tek tıkla devredilir, web girişi anında kapanır.
 
-Emlakçı ayrılınca `/cikar ID` → portföyü devredilir **ve web girişi anında kapanır**.
+## Telefona uygulama olarak kurmak (PWA)
+- **iPhone (Safari):** Paylaş → **Ana Ekrana Ekle**. **Android (Chrome):** menü → **Uygulamayı yükle**.
+- Tam ekran açılır; alttaki menüden Panel, İlanlar, **+ Hızlı Ekle**, Takip; sağ üstteki avatardan tüm bölümler.
+- Herhangi bir sayfada `Ctrl/⌘ + K` (veya `/`): kiracı, ev sahibi, telefon, daire, ilan, müşteri, belge no.
 
-## Telegram grubuna bildirim (isteğe bağlı)
-Hatırlatmalar, ofis raporları ve emlakçı işlem bildirimleri bir gruba da gönderilebilir.
-1. Telegram'da grup aç, botu gruba ekle.
-2. Grupta `/chatid` yaz → bot `Sohbet ID: -100...` yazar.
-3. Railway Variables'a `GROUP_CHAT_ID=-100...` ekle (eksi işaretiyle birlikte).
-4. Ofis sahibi bota özelden `/test_grup` yazarak gönderimi dener.
+## Modüller
 
-Gruptaki herkes kira ve kiracı bilgilerini görür. `/sifre` ve `/davet` gruplarda çalışmaz (şifre/kod sızmasın diye). Komutlar için botla özel sohbet kullanılır.
+### Takip Merkezi — "Sıfır olay kaçırma"
+Kira yenilemeleri, hukuki süreler, müşteri eşleşmeleri, boş daireler ve sistem uyarıları (TÜFE girilmedi, yedek
+alınamadı) önem sırasıyla tek listede; her kalemde **Aradım / WhatsApp / Detay** gibi tek tık işlemler.
 
-## Web paneli
-- **Emlakçı:** sadece kendi portföyünü görür/yönetir. **Ofis sahibi:** herkesi, ekip tablosunu, aktivite geçmişini görür.
-- Mülk ekleme, bu seneki zam oranını girme, yenileme, arşivleme. Emlakçıların işlemleri ofis sahibine Telegram'dan bildirilir.
+### Türk kira hukuku (`/hukuk`)
+- **TÜFE tavanı (TBK 344):** yenileme ayından önceki ayın 12 aylık ortalama TÜFE değişimi; TÜİK her ayın 3'ünde
+  açıklar, sistem 11:05'te çeker (EVDS → TÜİK bülteni → yerleşik tablo). Konutta 11.06.2022–01.07.2024 arası %25 sınırı.
+- **Tahliye taahhüdü (TBK 352/1, 353; İİK 272):** teslimden sonra imza kuralı, tahliye tarihinden itibaren 1 aylık
+  icra süresi, tarihten önce ihtar çekilirse 1 yıl — her aşama için hatırlatma.
+- **5. yıl kira tespiti (TBK 344/3, 345)** ve **10. yıl gerekçesiz tahliye hakkı (TBK 347)**: 3 ay önceden kırmızı alarm.
+- Emsal ilanlardan rayiç kira tahmini, kira artış hesaplayıcı.
+
+### Resmi belgeler (Mülk → **Belge Merkezi**)
+Taraf bilgileri (T.C. kimlik no ve IBAN doğrulanır) girildikten sonra tek tıkla PDF. Her belgede GN-YYYY-NNNNNN
+numarası ve doğrulama kodu bulunur; `/belge/dogrula` sayfasından sahteciliğe karşı kontrol edilir. Tahliye
+taahhütnamesi oluşturulurken hukuk radarına da eklenir.
+
+### Müşteri Talep Havuzu (`/talepler`)
+- Müşterinin cümlesini olduğu gibi yazın: *"Mehmet Bey 0532 111 22 33, 3+1 kiralık, bütçe 30-35 bin, Yahya Kaptan veya
+  Alikahya, acelesi var"* → ad, telefon, işlem türü, oda, bütçe, bölge, olanaklar ve aciliyet otomatik anlaşılır.
+- Talep kaydedildiği anda Sahibinden portföyü, boş daireler ve 90 gün içinde boşalacak daireler (tahliye taahhüdü)
+  puanlanır (0–100, gerekçeleriyle). Yeni ilan senkronlandığında ya da daire boşaldığında **anında** Telegram'a
+  *"🔔 Bu daire tam Mehmet Bey'in aradığı kriterde!"* mesajı ve **WhatsApp'tan gönder** butonu düşer.
+- Gönderildi / ilgileniyor / gösterim / beğenmedi takibi, görüşme notları, 2 gündür aranmayan acil müşteri uyarısı.
+- **Performans panosu (`/performans`):** danışman bazında kiralama/satış, tahmini ciro (kirada 1 aylık kira, satışta
+  %4, KDV hariç — değiştirilebilir), ortalama kiralanma süresi, gönderilen ilan ve takip sayısı.
+- Telegram: `/talep <cümle>` ve `/talepler`.
+
+### Şifreli gece yedeği (`/yedek`, sadece ofis sahibi)
+Her gece 03:00'te: tutarlı SQLite anlık görüntüsü → bütünlük kontrolü → gzip → **AES-256-GCM** (scrypt anahtar) →
+sunucuda son 14 kopya + Diren Doğan'ın **kişisel** Telegram sohbeti (sessiz; danışman grubuna asla) + isteğe bağlı
+S3/Cloudflare R2. Yedek alınamazsa veya 26 saattir başarılı yedek yoksa kırmızı alarm. Telegram'da `/yedek` ile
+elle alınır.
+
+**Geri yükleme:**
+```bash
+BACKUP_PASSPHRASE='…' python -m emlak_bot.backup verify gn-yedek-2026-10-15-0300.gnbak
+BACKUP_PASSPHRASE='…' python -m emlak_bot.backup decrypt gn-yedek-2026-10-15-0300.gnbak -o emlak.db
+```
+Büyük yedekler `.part1of3` gibi parçalar halinde gelir; ilk parçayı vermek yeterlidir. `BACKUP_PASSPHRASE`
+tanımlı değilse ve `SECRET_KEY` ortamdan geliyorsa yedek onunla şifrelenir (`--secret-key` ile çözülür); hiçbiri
+yoksa yedek sunucudan **şifresiz çıkmaz**, yalnız yerel kopya tutulur.
+
+**Denetim izi:** girişler, hatalı şifre denemeleri, telefonla arama ve WhatsApp tıklamaları (numara maskeli),
+dışa aktarma ve yedek indirmeleri `/yedek` sayfasında filtrelenebilir.
+
+## Telegram komutları
+`/yardim` tam listeyi verir. Öne çıkanlar: `/liste`, `/yaklasan`, `/mulk 5`, `/zam 5 %30`, `/yenile 5`, `/tufe`,
+`/hukuk`, `/talep …`, `/talepler`, `/ozet`, `/csv`, `/yedek`.
 
 ## Güvenlik
-Şifreler hash'lenir (werkzeug), CSRF koruması, HttpOnly + Secure + SameSite çerez, 8 saatlik oturum, 10 dakikada 5 hatalı denemede kilit, güvenlik başlıkları (CSP, HSTS, X-Frame-Options). Davet kodu tek kullanımlıktır. `.env` ve `*.db` git'e girmez.
+Şifreler hash'lenir (werkzeug), CSRF koruması, HttpOnly + Secure + SameSite çerez, 8 saatlik oturum, IP başına
+hatalı giriş kilidi, sıkı CSP (satır içi betik yok), HSTS, X-Frame-Options. Danışman yalnız kendi portföyünü ve
+müşterilerini görür. Dışa aktarılan CSV'de T.C. kimlik no ve IBAN yer almaz (KVKK). `.env`, `*.db` ve yedekler
+git'e girmez.
 
-## Bot nasıl çalışır
-- Her gün 09:00'da; yenilemeye **30 / 15 / 7 / 1 / 0 gün** kala (ve gecikmişse) mesaj gider: geçen yılki artış, bu yıl girilen artış (girilmemişse uyarı), TÜFE sınırı. "✅ Bildirildi" butonu ile emlakçı onaylar.
-- Ofis sahibi sorun varsa her gün, her Pazartesi tam rapor alır (gecikenler, zam girilmeyenler, onaylanmayanlar, pasif emlakçılar, emlakçı bazlı özet).
-- Komutlar için `/yardim`.
-
-## Yerelde çalıştırma
-```powershell
-python -m venv .venv
-.\.venv\Scripts\pip install -r requirements.txt
-copy .env.example .env     # doldur
-.\.venv\Scripts\python -m emlak_bot.main    # web: http://localhost:8000
-.\.venv\Scripts\python -m pytest
+## Geliştirme
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env            # doldurun
+python -m emlak_bot.main        # web: http://localhost:8000
+pytest -o pythonpath=.          # tüm testler yeşil olmalı
 ```
-
-## Notlar
-- **TÜFE:** Konut kira artışı yasal olarak TÜFE 12 aylık ortalamasını aşamaz. Güncel oranı sahip `/tufe 33.5` ile girer; bot aşan zamları uyarır. Değeri TÜİK'ten doğrulayın.
-- **WhatsApp:** `emlak_bot/messenger.py` içindeki `Messenger` arayüzünü uygulayan `WhatsAppMessenger` yazılacak; `users.channel` alanı hazır.
-- **Yedek:** Railway volume'daki `emlak.db` dosyasını düzenli yedekleyin (`/csv` komutu da portföyü Excel'e verir).
+Mimari, modül kancaları ve kurallar için [`CLAUDE.md`](CLAUDE.md).
