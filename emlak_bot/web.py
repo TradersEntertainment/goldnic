@@ -104,9 +104,13 @@ def create_app(db: Database, cfg: Config) -> Flask:
     def headers(resp):
         resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["X-Content-Type-Options"] = "nosniff"
-        resp.headers["Referrer-Policy"] = "same-origin"
+        resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         resp.headers["Content-Security-Policy"] = (
-            "default-src 'self'; style-src 'self' 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'"
+            "default-src 'self'; "
+            "img-src 'self' data: https://*.shbdn.com https://*.sahibinden.com https:; "
+            "style-src 'self' 'unsafe-inline'; "
+            "form-action 'self'; "
+            "frame-ancestors 'none'"
         )
         resp.headers["Cache-Control"] = "no-store"
         if cfg.cookie_secure:
@@ -150,7 +154,7 @@ def create_app(db: Database, cfg: Config) -> Flask:
 
     def get_prop(pid: int):
         p = db.get_property(pid)
-        if p is None or p["status"] != "active":
+        if p is None or p["status"] not in ("active", "vacant"):
             abort(404)
         if g.user["role"] != "owner" and p["agent_id"] != g.user["id"]:
             abort(403)
@@ -311,20 +315,27 @@ def create_app(db: Database, cfg: Config) -> Flask:
         consultant = request.args.get("danisman") or None
         listing_type = request.args.get("tur") or None
         search = request.args.get("q") or None
+        status = request.args.get("durum") or "active"
 
         items = db.list_sahibinden_listings(
             consultant=consultant,
             listing_type=listing_type,
             search=search,
+            status=status,
         )
         stats = db.get_sahibinden_stats()
+        last_sync = db.get_setting("last_auto_sync")
         return render_template(
             "listings.html",
             items=items,
             stats=stats,
             selected_consultant=consultant,
             selected_type=listing_type,
+            selected_status=status,
             search_query=search or "",
+            last_auto_sync=last_sync,
+            today_str=today().isoformat(),
+            next_year_str=(today() + timedelta(days=365)).isoformat(),
         )
 
     @app.post("/ilanlar/sync")
@@ -335,6 +346,13 @@ def create_app(db: Database, cfg: Config) -> Flask:
             res = seed_initial_listings(db, force=True)
             flash(
                 f"İlanlar güncellendi: {res['total']} ilan ({res['created']} yeni, {res['updated']} güncel, {res['republished']} 30 günlük yenilenen).",
+                "ok",
+            )
+        elif action == "auto":
+            from .scraper import run_auto_sync
+            res = run_auto_sync(db)
+            flash(
+                f"Otomatik senkronizasyon çalıştırıldı ({res.get('processed', 0)} ilan güncellendi).",
                 "ok",
             )
         else:
@@ -400,5 +418,113 @@ def create_app(db: Database, cfg: Config) -> Flask:
             "ok",
         )
         return redirect(url_for("property_view", pid=prop_id))
+
+    @app.post("/ilanlar/<int:lid>/kiralandi")
+    @login_required()
+    def listing_mark_rented(lid: int):
+        item = db.get_sahibinden_listing(lid)
+        if not item:
+            abort(404)
+        rent_val = float(request.form.get("rent") or item["price"] or 0)
+        start_date = request.form.get("start_date", "").strip() or today().isoformat()
+        renewal_date = request.form.get("renewal_date", "").strip() or (today() + timedelta(days=365)).isoformat()
+        tenant_name = request.form.get("tenant_name", "").strip()
+        tenant_phone = request.form.get("tenant_phone", "").strip()
+        landlord_name = request.form.get("landlord_name", "").strip()
+        landlord_phone = request.form.get("landlord_phone", "").strip()
+        notes = request.form.get("notes", "").strip()
+        agent_id = item["consultant_id"] if item["consultant_id"] else g.user["id"]
+
+        prop_id = db.mark_listing_rented(
+            lid=lid,
+            agent_id=agent_id,
+            title=item["title"],
+            rent=rent_val,
+            start_date=start_date,
+            renewal_date=renewal_date,
+            tenant_name=tenant_name,
+            tenant_phone=tenant_phone,
+            landlord_name=landlord_name,
+            landlord_phone=landlord_phone,
+            notes=notes,
+        )
+        db.log(g.user["id"], "ilan_kiralandi", prop_id, f"Kira: {rent_val} TL, Kiracı: {tenant_name}")
+        notify_owners(
+            f"🎉 {texts.esc(g.user['name'])} (web), #{lid} nolu ilanı kiraladı: "
+            f"<b>{texts.esc(item['title'])}</b> — Kira: {R.money(rent_val)}, Kiracı: {tenant_name}. "
+            f"Gelecek seneki artış tarihi: {renewal_date}"
+        )
+        flash(
+            f"🎉 Tebrikler! '{item['title']}' kiralandı olarak kaydedildi ve kira artış takvimine (# {prop_id}) eklendi.",
+            "ok",
+        )
+        return redirect(url_for("property_view", pid=prop_id))
+
+    @app.post("/ilanlar/<int:lid>/kapat")
+    @login_required()
+    def listing_close(lid: int):
+        item = db.get_sahibinden_listing(lid)
+        if not item:
+            abort(404)
+        action = request.form.get("action", "archive")  # archive or delete
+        reason = request.form.get("reason", "").strip()
+        db.close_or_delete_listing(lid, action=action, reason=reason)
+        db.log(g.user["id"], f"ilan_{action}", lid, f"Sebep: {reason}")
+        if action == "delete":
+            flash("İlan veritabanından kalıcı olarak silindi.", "ok")
+        else:
+            flash(f"İlan yayından kaldırıldı (Sebep: {reason or 'Belirtilmedi'}).", "ok")
+        return redirect(url_for("listings_view"))
+
+    @app.post("/mulk/<int:pid>/kiraci-cikti")
+    @login_required()
+    def property_kiraci_cikti(pid: int):
+        p = get_prop(pid)
+        exit_date = request.form.get("exit_date", "").strip() or today().isoformat()
+        deposit_notes = request.form.get("deposit_notes", "").strip()
+        handover_notes = request.form.get("handover_notes", "").strip()
+        next_step = request.form.get("next_step", "vacant")
+
+        db.mark_property_vacant(
+            pid=pid,
+            exit_date=exit_date,
+            deposit_notes=deposit_notes,
+            handover_notes=handover_notes,
+            next_step=next_step,
+        )
+        db.log(g.user["id"], "kiraci_cikti", pid, f"Tahliye: {exit_date}, Depozito: {deposit_notes}")
+        notify_owners(
+            f"🚪 {texts.esc(g.user['name'])} (web), #{pid} <b>{texts.esc(p['title'])}</b> mülkünden kiracının çıktığını işledi."
+        )
+        flash("Kiracı çıkışı kaydedildi. Mülk durumu güncellendi.", "ok")
+        return redirect(url_for("property_view", pid=pid))
+
+    @app.post("/mulk/<int:pid>/yeni-kiraci")
+    @login_required()
+    def property_new_tenant(pid: int):
+        p = get_prop(pid)
+        tenant_name = request.form.get("tenant_name", "").strip()
+        tenant_phone = request.form.get("tenant_phone", "").strip()
+        rent_val = float(request.form.get("rent", 0) or p["rent"] or 0)
+        start_date = request.form.get("start_date", "").strip() or today().isoformat()
+        renewal_date = request.form.get("renewal_date", "").strip() or (today() + timedelta(days=365)).isoformat()
+        notes = request.form.get("notes", "").strip()
+
+        db.reassign_tenant(
+            pid=pid,
+            tenant_name=tenant_name,
+            tenant_phone=tenant_phone,
+            rent=rent_val,
+            start_date=start_date,
+            renewal_date=renewal_date,
+            notes=notes,
+        )
+        db.log(g.user["id"], "yeni_kiraci_girdi", pid, f"Kiracı: {tenant_name}, Kira: {rent_val} TL")
+        notify_owners(
+            f"🤝 {texts.esc(g.user['name'])} (web), #{pid} <b>{texts.esc(p['title'])}</b> için yeni kiracı kaydetti: "
+            f"{tenant_name} (Kira: {R.money(rent_val)})."
+        )
+        flash("Yeni kiracı başarıyla kaydedildi! Kira artış takvimi güncellendi.", "ok")
+        return redirect(url_for("property_view", pid=pid))
 
     return app

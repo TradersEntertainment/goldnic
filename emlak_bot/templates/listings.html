@@ -5,7 +5,15 @@
 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px">
   <div>
     <h1 style="margin:0">🏢 Gold Nicomedia İlan Portföyü</h1>
-    <span class="mute">Sahibinden.com mağazasındaki güncel ilanlar ve danışman dağılımı</span>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
+      <span class="mute">Sahibinden.com mağazasındaki güncel ilanlar ve danışman dağılımı</span>
+      <span style="font-size:12px;background:#dafbe1;color:#1a7f37;border:1px solid #aceebb;padding:2px 8px;border-radius:12px">
+        🟢 Otomatik Senkronizasyon: Aktif (6 Saatte Bir)
+      </span>
+      {% if last_auto_sync %}
+      <span class="mute" style="font-size:12px">Son Kontrol: {{ last_auto_sync[:16].replace('T', ' ') }}</span>
+      {% endif %}
+    </div>
   </div>
   <div>
     <button type="button" class="btn" style="margin:0;display:inline-flex;align-items:center;gap:6px" onclick="openSyncModal()">
@@ -15,10 +23,10 @@
 </div>
 
 <!-- Özet İstatistik Kartları -->
-<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
   <div class="stat">
     <b>{{ stats.total }}</b>
-    <span>Toplam Aktif İlan</span>
+    <span>Aktif Yayında</span>
   </div>
   <div class="stat">
     <b style="color:#0969da">{{ stats.kiralik }}</b>
@@ -29,8 +37,12 @@
     <span>Satılık Portföy</span>
   </div>
   <div class="stat">
-    <b style="color:#1a7f37">{% if stats.republished > 0 %}{{ stats.republished }}{% else %}0{% endif %}</b>
+    <b style="color:#1a7f37">{{ stats.republished or 0 }}</b>
     <span>30 Günlük Yenilenenler</span>
+  </div>
+  <div class="stat">
+    <b style="color:#8250df">{{ stats.rented or 0 }}</b>
+    <span>🎉 Kiralandı / Takipte</span>
   </div>
 </div>
 
@@ -38,15 +50,31 @@
 <div class="card" style="padding:14px;margin-bottom:20px">
   <form method="get" action="{{ url_for('listings_view') }}" style="display:flex;flex-direction:column;gap:12px">
     
+    <!-- Durum Sekmeleri (Yayında / Kiralandı / Tümü) -->
+    <div style="display:flex;gap:6px;border-bottom:1px solid var(--line);padding-bottom:10px">
+      <a href="{{ url_for('listings_view', danisman=selected_consultant, tur=selected_type, durum='active', q=search_query) }}"
+         class="btn sm {% if selected_status == 'active' %}btn{% else %}alt{% endif %}">
+        🟢 Aktif Yayında ({{ stats.total }})
+      </a>
+      <a href="{{ url_for('listings_view', danisman=selected_consultant, tur=selected_type, durum='rented', q=search_query) }}"
+         class="btn sm {% if selected_status == 'rented' %}btn{% else %}alt{% endif %}">
+        🎉 Kiralandı ({{ stats.rented or 0 }})
+      </a>
+      <a href="{{ url_for('listings_view', danisman=selected_consultant, tur=selected_type, durum='all', q=search_query) }}"
+         class="btn sm {% if selected_status == 'all' %}btn{% else %}alt{% endif %}">
+        Tüm Arşiv
+      </a>
+    </div>
+
     <!-- Danışman Filtresi -->
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:600;color:var(--mute)">Danışman:</span>
-      <a href="{{ url_for('listings_view', tur=selected_type, q=search_query) }}" 
+      <a href="{{ url_for('listings_view', durum=selected_status, tur=selected_type, q=search_query) }}" 
          class="btn sm {% if not selected_consultant %}btn{% else %}alt{% endif %}">
         Tümü ({{ stats.total }})
       </a>
       {% for c in stats.consultants %}
-      <a href="{{ url_for('listings_view', danisman=c.name, tur=selected_type, q=search_query) }}" 
+      <a href="{{ url_for('listings_view', danisman=c.name, durum=selected_status, tur=selected_type, q=search_query) }}" 
          class="btn sm {% if selected_consultant == c.name %}btn{% else %}alt{% endif %}">
         👤 {{ c.name }} ({{ c.count }})
       </a>
@@ -56,20 +84,21 @@
     <!-- Tür ve Arama Çubuğu -->
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <div style="display:flex;gap:6px">
-        <a href="{{ url_for('listings_view', danisman=selected_consultant, q=search_query) }}" 
+        <a href="{{ url_for('listings_view', danisman=selected_consultant, durum=selected_status, q=search_query) }}" 
            class="btn sm {% if not selected_type %}btn{% else %}alt{% endif %}">Tüm Türler</a>
-        <a href="{{ url_for('listings_view', danisman=selected_consultant, tur='kiralik', q=search_query) }}" 
+        <a href="{{ url_for('listings_view', danisman=selected_consultant, durum=selected_status, tur='kiralik', q=search_query) }}" 
            class="btn sm {% if selected_type == 'kiralik' %}btn{% else %}alt{% endif %}">Kiralık ({{ stats.kiralik }})</a>
-        <a href="{{ url_for('listings_view', danisman=selected_consultant, tur='satilik', q=search_query) }}" 
+        <a href="{{ url_for('listings_view', danisman=selected_consultant, durum=selected_status, tur='satilik', q=search_query) }}" 
            class="btn sm {% if selected_type == 'satilik' %}btn{% else %}alt{% endif %}">Satılık ({{ stats.satilik }})</a>
       </div>
 
       <div style="flex:1;min-width:220px;display:flex;gap:6px">
         {% if selected_consultant %}<input type="hidden" name="danisman" value="{{ selected_consultant }}">{% endif %}
         {% if selected_type %}<input type="hidden" name="tur" value="{{ selected_type }}">{% endif %}
+        {% if selected_status %}<input type="hidden" name="durum" value="{{ selected_status }}">{% endif %}
         <input type="search" name="q" value="{{ search_query }}" placeholder="İlan başlığı, mahalle veya ilan no ile ara..." style="flex:1">
         <button type="submit" class="btn sm" style="margin:0">Ara</button>
-        {% if search_query or selected_consultant or selected_type %}
+        {% if search_query or selected_consultant or selected_type or selected_status != 'active' %}
         <a href="{{ url_for('listings_view') }}" class="btn sm alt" style="margin:0">Sıfırla</a>
         {% endif %}
       </div>
@@ -87,13 +116,15 @@
   <div class="lcard">
     <div class="lcard-thumb">
       {% if it.image_url %}
-      <img src="{{ it.image_url }}" alt="{{ it.title }}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <img src="{{ it.image_url }}" alt="{{ it.title }}" referrerpolicy="no-referrer" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
       <div class="no-img" style="display:none">🏢 {{ brand }}</div>
       {% else %}
       <div class="no-img">🏢 {{ brand }}</div>
       {% endif %}
       <div class="lcard-badges">
-        {% if it.listing_type == 'kiralik' %}
+        {% if it.status == 'rented' %}
+        <span class="badge" style="background:#8250df;color:#fff;border:0">🎉 KİRALANDI</span>
+        {% elif it.listing_type == 'kiralik' %}
         <span class="badge badge-kiralik">KİRALIK</span>
         {% elif it.listing_type == 'satilik' %}
         <span class="badge badge-satilik">SATILIK</span>
@@ -120,6 +151,11 @@
         <span>📍 {{ it.location or 'Kocaeli' }}</span>
         <span>📅 {{ it.publish_date or 'Güncel' }}</span>
       </div>
+      {% if it.status == 'rented' and it.deal_tenant_name %}
+      <div style="background:#f4f0ff;border-radius:6px;padding:6px 8px;font-size:12px;color:#572fba;margin-top:auto">
+        👤 <strong>Kiracı:</strong> {{ it.deal_tenant_name }} {% if it.deal_rent %}• {{ it.deal_rent|money }}{% endif %}
+      </div>
+      {% endif %}
     </div>
 
     <div class="lcard-consultant">
@@ -137,19 +173,32 @@
       <a href="{{ it.url }}" target="_blank" rel="noopener" class="btn sm alt" style="flex:1" title="İlanı Sahibinden'de aç">
         Sahibinden ↗
       </a>
-      {% if it.listing_type == 'kiralik' %}
+
+      {% if it.status == 'rented' %}
         {% if it.linked_prop_id %}
-        <a href="{{ url_for('property_view', pid=it.linked_prop_id) }}" class="btn sm ok" style="flex:1" title="Kira artış takip detayına git">
-          Takipte (#{{ it.linked_prop_id }})
+        <a href="{{ url_for('property_view', pid=it.linked_prop_id) }}" class="btn sm" style="flex:1;background:#8250df" title="Kira takip kartına git">
+          Kira Detayı (#{{ it.linked_prop_id }})
         </a>
-        {% else %}
-        <form method="post" action="{{ url_for('listing_track', lid=it.id) }}" style="flex:1;display:inline">
-          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-          <button type="submit" class="btn sm" style="width:100%" title="Bu kiralık daireyi kira artış ve hatırlatma sistemine aktar">
-            📋 Takibe Al
-          </button>
-        </form>
         {% endif %}
+      {% else %}
+        {% if it.listing_type == 'kiralik' %}
+          {% if it.linked_prop_id %}
+          <a href="{{ url_for('property_view', pid=it.linked_prop_id) }}" class="btn sm ok" style="flex:1" title="Kira artış takip detayına git">
+            Takipte (#{{ it.linked_prop_id }})
+          </a>
+          {% else %}
+          <button type="button" class="btn sm ok" style="flex:1" 
+                  onclick='openRentModal({{ it.id }}, {{ it.title|tojson }}, {{ it.price }}, {{ it.consultant_name|tojson }}, {{ it.consultant_phone|tojson }})'
+                  title="Bu ilan kiralandıysa kiracı ve kira artış senesi bilgilerini gir">
+            🎉 Kiralandı
+          </button>
+          {% endif %}
+        {% endif %}
+        <button type="button" class="btn sm alt" style="padding:5px 8px" 
+                onclick='openCloseModal({{ it.id }}, {{ it.title|tojson }})'
+                title="İlanı yayından kaldır veya sil">
+          ⚙️ Kaldır
+        </button>
       {% endif %}
     </div>
   </div>
@@ -165,7 +214,122 @@
 </div>
 {% endif %}
 
-<!-- Senkronizasyon / Güncelleme Modalı -->
+<!-- MODAL 1: KİRALANDI MI? (KİRA TAKVİMİNE EKLEME) -->
+<div id="rentModal" class="modal-overlay" onclick="if(event.target===this)closeRentModal()">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:10px">
+      <h2 style="margin:0;color:#1a7f37">🎉 Tebrikler! İlan Kiralandı</h2>
+      <button type="button" onclick="closeRentModal()" style="background:none;border:0;font-size:22px;cursor:pointer;color:var(--mute)">&times;</button>
+    </div>
+
+    <p style="font-size:13px;color:var(--mute);margin-top:0">
+      Kiralama bilgilerini girerek sözleşmeyi doğrudan yıllık <b>kira artış ve hatırlatma sistemine</b> bağlayabilirsiniz:
+    </p>
+
+    <form id="rentForm" method="post" action="">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+
+      <div style="background:#f4f6f9;padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:13px">
+        <strong id="rentModalTitle">-</strong>
+      </div>
+
+      <div class="two">
+        <div>
+          <label for="rent_amount">Anlaşılan Aylık Kira (TL): *</label>
+          <input type="number" step="any" name="rent" id="rent_amount" required>
+        </div>
+        <div>
+          <label for="start_date">Sözleşme / Başlangıç Tarihi: *</label>
+          <input type="date" name="start_date" id="start_date" value="{{ today_str }}" required>
+        </div>
+      </div>
+
+      <div style="background:#fff8e1;border:1px solid #f2e0a6;border-radius:8px;padding:10px;margin-top:12px">
+        <label for="renewal_date" style="margin-top:0;color:#9a6700">📅 Yeni Senesi Ne Zaman Dolacak? (Kira Artış Yıldönümü): *</label>
+        <input type="date" name="renewal_date" id="renewal_date" value="{{ next_year_str }}" required>
+        <small style="color:var(--mute);display:block;margin-top:4px">
+          Sistem bu tarihten 30 gün önce danışmana ve ofise otomatik zam hazırlık bildirimi gönderecektir.
+        </small>
+      </div>
+
+      <div class="two" style="margin-top:12px">
+        <div>
+          <label for="tenant_name">Kiracı Adı Soyadı: *</label>
+          <input type="text" name="tenant_name" id="tenant_name" placeholder="Örn: Ahmet Yılmaz" required>
+        </div>
+        <div>
+          <label for="tenant_phone">Kiracı Telefonu:</label>
+          <input type="tel" name="tenant_phone" id="tenant_phone" placeholder="0 5xx xxx xx xx">
+        </div>
+      </div>
+
+      <div class="two" style="margin-top:6px">
+        <div>
+          <label for="landlord_name">Ev Sahibi / Mülk Sahibi Adı:</label>
+          <input type="text" name="landlord_name" id="landlord_name" placeholder="Mülk Sahibi Adı">
+        </div>
+        <div>
+          <label for="landlord_phone">Ev Sahibi Telefonu:</label>
+          <input type="tel" name="landlord_phone" id="landlord_phone" placeholder="0 5xx xxx xx xx">
+        </div>
+      </div>
+
+      <label for="rent_notes">Ekstra Notlar / Şartlar (Depozito, Taahhütname vb.):</label>
+      <textarea name="notes" id="rent_notes" rows="2" placeholder="Örn: 1 kira depozito alındı. Tahliye taahhütnamesi imzalandı."></textarea>
+
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button type="submit" class="btn ok" style="flex:1">🎉 Kiralandı Olarak Kaydet ve Takvime Ekle</button>
+        <button type="button" class="btn alt" onclick="closeRentModal()">İptal</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL 2: İLANI YAYINDAN KALDIR / KAPAT -->
+<div id="closeModal" class="modal-overlay" onclick="if(event.target===this)closeCloseModal()">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:10px">
+      <h2 style="margin:0">İlanı Yayından Kaldır / Arşivle</h2>
+      <button type="button" onclick="closeCloseModal()" style="background:none;border:0;font-size:22px;cursor:pointer;color:var(--mute)">&times;</button>
+    </div>
+
+    <form id="closeForm" method="post" action="">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+
+      <div style="background:#f4f6f9;padding:10px 12px;border-radius:8px;margin-bottom:14px;font-size:13px">
+        <strong id="closeModalTitle">-</strong>
+      </div>
+
+      <label>İşlem Türü:</label>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+        <label style="font-weight:normal;display:flex;align-items:center;gap:6px">
+          <input type="radio" name="action" value="archive" checked style="width:auto"> 
+          Yayından Kaldır / Arşive Al (Geçmişte kalsın)
+        </label>
+        <label style="font-weight:normal;display:flex;align-items:center;gap:6px">
+          <input type="radio" name="action" value="delete" style="width:auto"> 
+          Veritabanından Kalıcı Olarak Sil
+        </label>
+      </div>
+
+      <label for="close_reason">Kaldırılma Sebebi:</label>
+      <select name="reason" id="close_reason" style="margin-bottom:10px">
+        <option value="Mülk sahibi vazgeçti">Mülk sahibi vazgeçti / ilandan çekildi</option>
+        <option value="Farklı bir emlakçı kiraladı/sattı">Farklı bir emlakçı veya sahibi kiraladı/sattı</option>
+        <option value="Fiyat / bilgi güncellemesi için çekildi">Fiyat veya bilgi güncellemesi için çekildi</option>
+        <option value="Süresi doldu">Süresi doldu / yenilenmeyecek</option>
+        <option value="Diğer">Diğer</option>
+      </select>
+
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button type="submit" class="btn danger" style="flex:1">İşlemi Tamamla</button>
+        <button type="button" class="btn alt" onclick="closeCloseModal()">İptal</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL 3: SENKRONİZASYON VE GÜNCELLEME MODALI -->
 <div id="syncModal" class="modal-overlay" onclick="if(event.target===this)closeSyncModal()">
   <div class="modal-box">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:10px">
@@ -173,29 +337,29 @@
       <button type="button" onclick="closeSyncModal()" style="background:none;border:0;font-size:22px;cursor:pointer;color:var(--mute)">&times;</button>
     </div>
 
-    <p style="font-size:13px;color:var(--mute);margin-top:0">
-      Sahibinden.com bot korumasını aşmak ve 30 günde bir tekrar girilen ilanları <b>mükerrer kayıt yaratmadan</b> güncellemek için aşağıdaki yöntemleri kullanabilirsiniz:
-    </p>
+    <div style="background:#dafbe1;border:1px solid #aceebb;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;color:#0a3d18">
+      <strong>⚡ Otomatik Tarama Aktif (0 Server Maliyeti):</strong><br>
+      Sistem arka planda 6 saatte bir Sahibinden mağazanızı otomatik kontrol eder. Ek bir işlem yapmanıza gerek yoktur.
+    </div>
 
     <!-- Tab Seçici -->
     <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:10px">
-      <button type="button" class="btn sm" id="tabBtn1" onclick="switchTab(1)">⚡ Hızlı Yenile (64 İlan)</button>
+      <button type="button" class="btn sm" id="tabBtn1" onclick="switchTab(1)">⚡ Şimdi Tara / Yenile</button>
       <button type="button" class="btn sm alt" id="tabBtn2" onclick="switchTab(2)">📋 Sayfa HTML Yapıştır</button>
-      <button type="button" class="btn sm alt" id="tabBtn3" onclick="switchTab(3)">🔖 1-Tık Yer İmi (Bookmarklet)</button>
+      <button type="button" class="btn sm alt" id="tabBtn3" onclick="switchTab(3)">🔖 1-Tık Yer İmi</button>
     </div>
 
     <!-- Tab 1: Varsayılan Yenileme -->
     <div id="tab1">
-      <div style="background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
-        <strong>Hazır Depo Senkronizasyonu:</strong>
-        <p style="margin:6px 0 0;color:var(--mute)">
-          Gold Nicomedia mağazasından taranmış tüm güncel ilanları (Burkay Yıldırım: 39, Diren Doğan: 10, Ecenaz Öztekin: 10, Erkan Kartay: 5) veritabanına yeniden aktarır. 30 günde bir yenilenen ilanlar varsa mevcut kayıtların üzerine güncellenir.
-        </p>
-      </div>
+      <form method="post" action="{{ url_for('listings_sync') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="auto">
+        <button type="submit" class="btn" style="width:100%;margin-bottom:10px">🔄 Otomatik Canlı Taramayı Şimdi Çalıştır</button>
+      </form>
       <form method="post" action="{{ url_for('listings_sync') }}">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="seed">
-        <button type="submit" class="btn ok" style="width:100%">Tüm 64 İlanı Veritabanına Yükle / Senkronize Et</button>
+        <button type="submit" class="btn ok" style="width:100%">📦 Hazır Depodaki 64 İlanı Sıfırla / Güncelle</button>
       </form>
     </div>
 
@@ -241,6 +405,25 @@
 </div>
 
 <script>
+function openRentModal(id, title, price, cName, cPhone) {
+  document.getElementById('rentForm').action = '/ilanlar/' + id + '/kiralandi';
+  document.getElementById('rentModalTitle').textContent = '#' + id + ' — ' + title;
+  document.getElementById('rent_amount').value = price || '';
+  document.getElementById('rentModal').classList.add('active');
+}
+function closeRentModal() {
+  document.getElementById('rentModal').classList.remove('active');
+}
+
+function openCloseModal(id, title) {
+  document.getElementById('closeForm').action = '/ilanlar/' + id + '/kapat';
+  document.getElementById('closeModalTitle').textContent = '#' + id + ' — ' + title;
+  document.getElementById('closeModal').classList.add('active');
+}
+function closeCloseModal() {
+  document.getElementById('closeModal').classList.remove('active');
+}
+
 function openSyncModal() {
   document.getElementById('syncModal').classList.add('active');
 }

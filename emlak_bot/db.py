@@ -94,6 +94,11 @@ CREATE TABLE IF NOT EXISTS sahibinden_listings (
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL,
     republish_count INTEGER NOT NULL DEFAULT 1,
+    deal_date TEXT,
+    deal_notes TEXT,
+    deal_rent REAL,
+    deal_tenant_name TEXT,
+    deal_tenant_phone TEXT,
     status TEXT NOT NULL DEFAULT 'active'
 );
 CREATE INDEX IF NOT EXISTS ix_shbdn_norm ON sahibinden_listings(consultant_name, listing_type, normalized_title);
@@ -103,6 +108,7 @@ EDITABLE_PROPERTY_COLUMNS = {
     "title", "landlord_name", "landlord_phone", "tenant_name", "tenant_phone",
     "rent", "renewal_date", "last_increase_pct", "last_increase_amount",
     "planned_pct", "planned_rent", "notes", "status", "agent_id",
+    "exit_date", "deposit_notes", "handover_notes",
 }
 
 
@@ -121,6 +127,28 @@ class Database:
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username ON users(username)")
             if "password_hash" not in cols:
                 c.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+
+            # Mülk tahliye / kiracı çıkışı sütunları
+            p_cols = {r["name"] for r in c.execute("PRAGMA table_info(properties)")}
+            if "exit_date" not in p_cols:
+                c.execute("ALTER TABLE properties ADD COLUMN exit_date TEXT")
+            if "deposit_notes" not in p_cols:
+                c.execute("ALTER TABLE properties ADD COLUMN deposit_notes TEXT")
+            if "handover_notes" not in p_cols:
+                c.execute("ALTER TABLE properties ADD COLUMN handover_notes TEXT")
+
+            # Sahibinden kiralama / işlem sütunları
+            s_cols = {r["name"] for r in c.execute("PRAGMA table_info(sahibinden_listings)")}
+            if "deal_date" not in s_cols:
+                c.execute("ALTER TABLE sahibinden_listings ADD COLUMN deal_date TEXT")
+            if "deal_notes" not in s_cols:
+                c.execute("ALTER TABLE sahibinden_listings ADD COLUMN deal_notes TEXT")
+            if "deal_rent" not in s_cols:
+                c.execute("ALTER TABLE sahibinden_listings ADD COLUMN deal_rent REAL")
+            if "deal_tenant_name" not in s_cols:
+                c.execute("ALTER TABLE sahibinden_listings ADD COLUMN deal_tenant_name TEXT")
+            if "deal_tenant_phone" not in s_cols:
+                c.execute("ALTER TABLE sahibinden_listings ADD COLUMN deal_tenant_phone TEXT")
             c.commit()
 
     def _conn(self) -> sqlite3.Connection:
@@ -383,10 +411,17 @@ class Database:
         return new_id, "created"
 
     def list_sahibinden_listings(
-        self, consultant: str | None = None, listing_type: str | None = None, search: str | None = None
+        self,
+        consultant: str | None = None,
+        listing_type: str | None = None,
+        search: str | None = None,
+        status: str = "active",
     ) -> list[sqlite3.Row]:
-        sql = "SELECT s.*, p.id AS linked_prop_id FROM sahibinden_listings s LEFT JOIN properties p ON p.id=s.property_id WHERE s.status='active'"
+        sql = "SELECT s.*, p.id AS linked_prop_id FROM sahibinden_listings s LEFT JOIN properties p ON p.id=s.property_id WHERE 1=1"
         params: list[Any] = []
+        if status != "all":
+            sql += " AND s.status=?"
+            params.append(status)
         if consultant:
             sql += " AND s.consultant_name=?"
             params.append(consultant)
@@ -408,6 +443,7 @@ class Database:
         kiralik = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='active' AND listing_type='kiralik'")["c"]
         satilik = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='active' AND listing_type='satilik'")["c"]
         republished = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='active' AND republish_count > 1")["c"]
+        rented = self.one("SELECT COUNT(*) AS c FROM sahibinden_listings WHERE status='rented'")["c"]
         consultants = self.query(
             "SELECT consultant_name AS name, consultant_phone AS phone, COUNT(*) AS count "
             "FROM sahibinden_listings WHERE status='active' GROUP BY consultant_name ORDER BY count DESC"
@@ -417,11 +453,96 @@ class Database:
             "kiralik": kiralik,
             "satilik": satilik,
             "republished": republished,
+            "rented": rented,
             "consultants": [dict(c) for c in consultants],
         }
 
     def link_sahibinden_to_property(self, listing_id: int, property_id: int) -> None:
         self.execute("UPDATE sahibinden_listings SET property_id=? WHERE id=?", (property_id, listing_id))
+
+    def mark_listing_rented(
+        self,
+        lid: int,
+        agent_id: int,
+        title: str,
+        rent: float,
+        start_date: str,
+        renewal_date: str,
+        tenant_name: str = "",
+        tenant_phone: str = "",
+        landlord_name: str = "",
+        landlord_phone: str = "",
+        notes: str = "",
+    ) -> int:
+        """İlanı 'kiralandı' yapar ve kira artış takvimine mülk olarak ekler."""
+        now = now_iso()
+        note_parts = [f"Sahibinden ilanı kiralandı. Başlangıç: {start_date}."]
+        if notes:
+            note_parts.append(notes)
+        prop_id = self.add_property(
+            agent_id=agent_id,
+            title=title,
+            rent=rent,
+            renewal_date=renewal_date,
+            tenant_name=tenant_name or None,
+            tenant_phone=tenant_phone or None,
+            landlord_name=landlord_name or None,
+            landlord_phone=landlord_phone or None,
+            notes=" ".join(note_parts),
+            status="active",
+        )
+        self.execute(
+            "UPDATE sahibinden_listings SET status='rented', property_id=?, deal_date=?, "
+            "deal_rent=?, deal_tenant_name=?, deal_tenant_phone=?, deal_notes=? WHERE id=?",
+            (prop_id, start_date or now[:10], rent, tenant_name, tenant_phone, notes, lid),
+        )
+        return prop_id
+
+    def close_or_delete_listing(self, lid: int, action: str = "archive", reason: str = "") -> None:
+        """İlanı yayından kaldırır veya tamamen siler."""
+        now = now_iso()
+        if action == "delete":
+            self.execute("DELETE FROM sahibinden_listings WHERE id=?", (lid,))
+        else:
+            self.execute(
+                "UPDATE sahibinden_listings SET status='inactive', deal_notes=? WHERE id=?",
+                (f"Yayından kaldırıldı ({now[:10]}): {reason}".strip(), lid),
+            )
+
+    def mark_property_vacant(
+        self,
+        pid: int,
+        exit_date: str,
+        deposit_notes: str = "",
+        handover_notes: str = "",
+        next_step: str = "vacant",
+    ) -> None:
+        """Kiracı çıktığında mülkü boş / kiracı aranıyor durumuna alır."""
+        st = "vacant" if next_step == "vacant" else "archived"
+        self.execute(
+            "UPDATE properties SET status=?, exit_date=?, deposit_notes=?, handover_notes=? WHERE id=?",
+            (st, exit_date, deposit_notes, handover_notes, pid),
+        )
+
+    def reassign_tenant(
+        self,
+        pid: int,
+        tenant_name: str,
+        tenant_phone: str,
+        rent: float,
+        start_date: str,
+        renewal_date: str,
+        notes: str = "",
+    ) -> None:
+        """Boşalan mülke yeni kiracı girildiğinde aktif kira takibine döndürür."""
+        old = self.get_property(pid)
+        hist = f"Önceki Kiracı: {old['tenant_name'] or '-'} (Çıkış: {old['exit_date'] or '-'}). " if old else ""
+        comb = (hist + (notes or "")).strip()
+        self.execute(
+            "UPDATE properties SET status='active', tenant_name=?, tenant_phone=?, rent=?, "
+            "renewal_date=?, notes=?, exit_date=NULL, planned_pct=NULL, planned_rent=NULL WHERE id=?",
+            (tenant_name, tenant_phone, rent, renewal_date, comb, pid),
+        )
 
 
 def normalize_title(title: str) -> str:

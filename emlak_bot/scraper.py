@@ -251,3 +251,78 @@ def sync_listings_data(raw_payload: Any, db: Database) -> dict[str, int]:
         "updated": updated,
         "republished": republished,
     }
+
+
+def fetch_live_store_listings(max_pages: int = 4) -> list[dict[str, Any]]:
+    """
+    Sahibinden mağaza sayfalarından canlı veri çekmeyi dener.
+    DataDome bot engeli gelirse sessizce boş döner ve mevcut veriyi korur.
+    """
+    import urllib.request
+
+    base_url = "https://goldnicomedia.sahibinden.com/"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+    }
+    all_items: list[dict[str, Any]] = []
+    for page in range(1, max_pages + 1):
+        url = base_url if page == 1 else f"{base_url}?pagingOffset={(page - 1) * 20}"
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status == 200:
+                    html_content = resp.read().decode("utf-8", errors="replace")
+                    items = parse_listings_from_html(html_content)
+                    if not items:
+                        break
+                    all_items.extend(items)
+        except Exception as e:
+            logger.info(f"Canlı çekme kontrolü (sayfa {page}): {e}")
+            break
+    return all_items
+
+
+def run_auto_sync(db: Database) -> dict[str, Any]:
+    """Arka planda periyodik olarak çalışan otomatik senkronizasyon."""
+    from emlak_bot.db import now_iso
+
+    # 1. Kayıt yoksa ilk seed'i yap
+    seed_initial_listings(db)
+
+    # 2. Canlı siteden yeni ilan çekmeyi dene
+    live_items = fetch_live_store_listings(max_pages=4)
+    res: dict[str, Any] = {"live_fetched": len(live_items), "created": 0, "updated": 0, "republished": 0}
+    if live_items:
+        res = sync_listings_data(live_items, db)
+
+    db.set_setting("last_auto_sync", now_iso())
+    return res
+
+
+def start_auto_sync_thread(db: Database, interval_seconds: int = 21600) -> None:
+    """
+    Arka planda ek server maliyeti yaratmayan (0 CPU/RAM masrafı) daemon thread başlatır.
+    Varsayılan olarak 6 saatte bir (günde 4 kez) otomatik kontrol eder.
+    """
+    import threading
+    import time
+
+    def _loop():
+        # Sunucu açıldıktan 30 saniye sonra ilk kontrol
+        time.sleep(30)
+        while True:
+            try:
+                res = run_auto_sync(db)
+                logger.info("Otomatik senkronizasyon tamamlandı: %s", res)
+            except Exception as e:
+                logger.warning("Otomatik senkronizasyon hatası: %s", e)
+            time.sleep(interval_seconds)
+
+    t = threading.Thread(target=_loop, name="auto_sync", daemon=True)
+    t.start()
+    logger.info("Otomatik senkronizasyon thread'i başlatıldı (Aralık: %s saniye)", interval_seconds)

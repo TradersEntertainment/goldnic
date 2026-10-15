@@ -37,13 +37,14 @@ def main() -> None:
     db = Database(cfg.db_path)
     logging.getLogger("emlak_bot").info("Veritabanı: %s", cfg.db_path)
 
-    # Sahibinden portföy ilk yükleme (64 ilan)
-    from .scraper import seed_initial_listings
+    # Sahibinden portföy ilk yükleme (64 ilan) & arka plan otomatik senkronizasyon (0 server maliyeti)
+    from .scraper import seed_initial_listings, start_auto_sync_thread
     try:
         seed_res = seed_initial_listings(db)
         logging.getLogger("emlak_bot").info("Sahibinden portföy durumu: %s", seed_res)
+        start_auto_sync_thread(db)
     except Exception as e:
-        logging.getLogger("emlak_bot").warning("Sahibinden tohumlama hatası: %s", e)
+        logging.getLogger("emlak_bot").warning("Sahibinden tohumlama/senkronizasyon hatası: %s", e)
 
     # Web yöneticisi env üzerinden verilmişse oluştur/güncelle
     if cfg.admin_username and cfg.admin_password:

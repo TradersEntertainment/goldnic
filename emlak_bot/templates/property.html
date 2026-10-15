@@ -1,9 +1,77 @@
 {% extends "base.html" %}
 {% block body %}
-<h1>🏠 {{ p.title }} <span class="mute">#{{ p.id }}</span></h1>
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px">
+  <h1 style="margin:0">🏠 {{ p.title }} <span class="mute">#{{ p.id }}</span></h1>
+  <div>
+    {% if p.status == 'vacant' %}
+    <span class="badge" style="background:#fff8e1;color:#9a6700;border:1px solid #f2e0a6;font-size:13px;padding:4px 10px">
+      🚪 BOŞ PORTFÖY (Kiracı Aranıyor)
+    </span>
+    {% else %}
+    <span class="badge badge-active" style="font-size:13px;padding:4px 10px">
+      ✓ AKTİF KİRACI TAKİBİNDE
+    </span>
+    {% endif %}
+  </div>
+</div>
+
+{% if p.status == 'vacant' %}
+<div class="card" style="background:#fff8e1;border:1px solid #f2e0a6;margin-bottom:16px">
+  <h2 style="color:#9a6700;margin:0 0 8px">🚪 Bu Mülk Şu Anda Boş (Kiracı Çıktı)</h2>
+  <div style="font-size:13px;display:grid;grid-template-columns:160px 1fr;gap:6px 12px">
+    <div style="color:var(--mute)">Tahliye Tarihi:</div><div><b>{{ p.exit_date or 'Belirtilmedi' }}</b></div>
+    <div style="color:var(--mute)">Depozito / Mahsup:</div><div>{{ p.deposit_notes or 'Kayıt girilmedi' }}</div>
+    <div style="color:var(--mute)">Anahtar & Mülk Durumu:</div><div>{{ p.handover_notes or 'Kayıt girilmedi' }}</div>
+  </div>
+</div>
+
+<!-- Yeni Kiracı Giriş Kartı -->
+<div class="card" style="border:2px solid var(--pri);margin-bottom:20px">
+  <h2>➕ Yeni Kiracı Girişi Yap</h2>
+  <p class="mute" style="font-size:13px;margin-top:0">
+    Bu mülk yeni bir kiracıya verildiğinde bilgileri girerek kira artış takvimini otomatik başlatabilirsiniz:
+  </p>
+  <form method="post" action="{{ url_for('property_new_tenant', pid=p.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+
+    <div class="two">
+      <div>
+        <label for="nt_name">Yeni Kiracı Adı Soyadı: *</label>
+        <input type="text" name="tenant_name" id="nt_name" required placeholder="Örn: Mehmet Öz">
+      </div>
+      <div>
+        <label for="nt_phone">Yeni Kiracı Telefonu:</label>
+        <input type="tel" name="tenant_phone" id="nt_phone" placeholder="0 5xx xxx xx xx">
+      </div>
+    </div>
+
+    <div class="two" style="margin-top:8px">
+      <div>
+        <label for="nt_rent">Yeni Aylık Kira (TL): *</label>
+        <input type="number" step="any" name="rent" id="nt_rent" value="{{ p.rent|int }}" required>
+      </div>
+      <div>
+        <label for="nt_start">Kira Başlangıç Tarihi: *</label>
+        <input type="date" name="start_date" id="nt_start" required>
+      </div>
+    </div>
+
+    <div style="background:#f0f8ff;border:1px solid #b6d3f2;border-radius:8px;padding:10px;margin-top:10px">
+      <label for="nt_renewal" style="margin-top:0;color:#0969da">📅 Yeni Senesi Ne Zaman Dolacak? (Kira Artış Tarihi): *</label>
+      <input type="date" name="renewal_date" id="nt_renewal" required>
+    </div>
+
+    <label for="nt_notes">Ekstra Notlar (Depozito, taahhüt vb.):</label>
+    <textarea name="notes" id="nt_notes" rows="2" placeholder="Örn: 2 kira depozito alındı. Boyalı teslim edildi."></textarea>
+
+    <button type="submit" class="btn ok" style="margin-top:12px">Yeni Kiracıyı Başlat ve Takibe Al</button>
+  </form>
+</div>
+{% endif %}
+
 <div class="two">
   <div class="card">
-    <h2>Bilgiler</h2>
+    <h2>Genel Bilgiler</h2>
     <div class="kv">
       <div>Sorumlu emlakçı</div><div>{{ agent.name if agent else '-' }}</div>
       <div>Ev sahibi</div><div>{{ p.landlord_name or '-' }} {{ p.landlord_phone or '' }}</div>
@@ -17,6 +85,7 @@
     </div>
     {% if over_cap %}<p class="bad">🚨 Planlanan artış yasal TÜFE sınırını aşıyor.</p>{% endif %}
   </div>
+
   <div class="card">
     <h2>Bu seneki artışı gir</h2>
     <form method="post" action="{{ url_for('property_zam', pid=p.id) }}">
@@ -32,11 +101,95 @@
     </form>
   </div>
 </div>
-{% if hist %}<div class="card"><h2>Kira geçmişi</h2>
-<table><tr><th>Tarih</th><th>Eski</th><th>Yeni</th><th>Artış</th></tr>
-{% for h in hist %}<tr><td>{{ h.effective_date|tdate }}</td><td>{{ h.old_rent|money }}</td><td>{{ h.new_rent|money }}</td><td>{{ h.pct|pct }}</td></tr>{% endfor %}</table></div>{% endif %}
-<form method="post" action="{{ url_for('property_delete', pid=p.id) }}" onsubmit="return confirm('Mülk arşivlensin mi?')">
-  <input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="btn danger">Arşivle</button>
-  <a class="btn alt" style="text-decoration:none;display:inline-block" href="{{ url_for('dashboard') }}">← Geri</a>
-</form>
+
+{% if hist %}
+<div class="card">
+  <h2>Kira geçmişi</h2>
+  <table>
+    <tr><th>Tarih</th><th>Eski</th><th>Yeni</th><th>Artış</th></tr>
+    {% for h in hist %}
+    <tr><td>{{ h.effective_date|tdate }}</td><td>{{ h.old_rent|money }}</td><td>{{ h.new_rent|money }}</td><td>{{ h.pct|pct }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+  {% if p.status == 'active' %}
+  <button type="button" class="btn" style="background:#b7791f;color:#fff" onclick="openVacantModal()">
+    🚪 Kiracı Çıktı / Mülk Boşaldı
+  </button>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('property_delete', pid=p.id) }}" onsubmit="return confirm('Mülk arşivlensin mi?')" style="display:inline">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="btn danger">Arşivle</button>
+  </form>
+  <a class="btn alt" style="text-decoration:none" href="{{ url_for('dashboard') }}">← Geri Dön</a>
+</div>
+
+<!-- KİRACI ÇIKTI MODALI -->
+<div id="vacantModal" class="modal-overlay" onclick="if(event.target===this)closeVacantModal()">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:10px">
+      <h2 style="margin:0;color:#b7791f">🚪 Kiracı Çıkışı / Tahliye İşlemi</h2>
+      <button type="button" onclick="closeVacantModal()" style="background:none;border:0;font-size:22px;cursor:pointer;color:var(--mute)">&times;</button>
+    </div>
+
+    <p style="font-size:13px;color:var(--mute);margin-top:0">
+      Kiracı tahliyesiyle ilgili detayları kaydedip mülkü portföyde boş olarak güncelleyebilirsiniz:
+    </p>
+
+    <form method="post" action="{{ url_for('property_kiraci_cikti', pid=p.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+
+      <label for="exit_date">Tahliye / Anahtar Teslim Tarihi: *</label>
+      <input type="date" name="exit_date" id="exit_date" required>
+
+      <label for="deposit_notes">Depozito İadesi & Mahsup Durumu:</label>
+      <textarea name="deposit_notes" id="deposit_notes" rows="2" placeholder="Örn: 20.000 TL depozitodan 4.000 TL boya/hasar masrafı kesildi, 16.000 TL kiracıya EFT yapıldı."></textarea>
+
+      <label for="handover_notes">Mülkün Güncel Durumu & Anahtar:</label>
+      <textarea name="handover_notes" id="handover_notes" rows="2" placeholder="Örn: 2 takım anahtar alındı. Boya badana gerekiyor. Elektrik/su abonelikleri kapatıldı."></textarea>
+
+      <label>Mülkün Sonraki Adımı:</label>
+      <div style="display:flex;flex-direction:column;gap:6px;margin:8px 0 14px">
+        <label style="font-weight:normal;display:flex;align-items:center;gap:6px">
+          <input type="radio" name="next_step" value="vacant" checked style="width:auto"> 
+          Mülk Boşta kalsın (Yeni kiracı aranıyor olarak portföyde görünsün)
+        </label>
+        <label style="font-weight:normal;display:flex;align-items:center;gap:6px">
+          <input type="radio" name="next_step" value="archived" style="width:auto"> 
+          Mülk Sahibi Kendisi Kullanacak / Arşive Al
+        </label>
+      </div>
+
+      <div style="display:flex;gap:10px">
+        <button type="submit" class="btn ok" style="flex:1">Kiracı Çıkışını Kaydet</button>
+        <button type="button" class="btn alt" onclick="closeVacantModal()">Vazgeç</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openVacantModal() {
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('exit_date').value = today;
+  document.getElementById('vacantModal').classList.add('active');
+}
+function closeVacantModal() {
+  document.getElementById('vacantModal').classList.remove('active');
+}
+// Set defaults for new tenant form if present
+window.addEventListener('DOMContentLoaded', () => {
+  const ntStart = document.getElementById('nt_start');
+  const ntRenew = document.getElementById('nt_renewal');
+  if (ntStart && !ntStart.value) {
+    const now = new Date();
+    ntStart.value = now.toISOString().split('T')[0];
+    const nextYear = new Date(now.setFullYear(now.getFullYear() + 1));
+    if (ntRenew) ntRenew.value = nextYear.toISOString().split('T')[0];
+  }
+});
+</script>
 {% endblock %}

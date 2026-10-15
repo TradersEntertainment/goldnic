@@ -163,3 +163,88 @@ def test_listings_web_and_tracking(tmp_db):
     prop = tmp_db.get_property(updated_item["property_id"])
     assert prop["title"] == first["title"]
     assert prop["rent"] == first["price"]
+
+
+def test_mark_listing_rented_and_closure(tmp_db):
+    seed_initial_listings(tmp_db)
+    admin_id = tmp_db.seed_admin("direndogann", "SertSifre123!")
+
+    kiralik_items = [it for it in tmp_db.list_sahibinden_listings(listing_type="kiralik")]
+    target = kiralik_items[1]
+
+    # Kiralandı işlemi
+    prop_id = tmp_db.mark_listing_rented(
+        lid=target["id"],
+        agent_id=admin_id,
+        title=target["title"],
+        rent=30000.0,
+        start_date="2026-10-15",
+        renewal_date="2027-10-15",
+        tenant_name="Kemal Demir",
+        tenant_phone="05321112233",
+        landlord_name="Ayşe Kaya",
+        landlord_phone="05423334455",
+        notes="1 kira depozito alındı.",
+    )
+    assert prop_id > 0
+
+    # İlan durumu 'rented' olmalı
+    updated_listing = tmp_db.get_sahibinden_listing(target["id"])
+    assert updated_listing["status"] == "rented"
+    assert updated_listing["deal_tenant_name"] == "Kemal Demir"
+    assert updated_listing["deal_rent"] == 30000.0
+
+    # Mülk 'active' olmalı
+    prop = tmp_db.get_property(prop_id)
+    assert prop["status"] == "active"
+    assert prop["tenant_name"] == "Kemal Demir"
+    assert prop["renewal_date"] == "2027-10-15"
+
+    # İlanı kapat / arşive al
+    third = kiralik_items[2]
+    tmp_db.close_or_delete_listing(third["id"], action="archive", reason="Mülk sahibi vazgeçti")
+    closed = tmp_db.get_sahibinden_listing(third["id"])
+    assert closed["status"] == "inactive"
+
+
+def test_vacant_and_new_tenant_lifecycle(tmp_db):
+    admin_id = tmp_db.seed_admin("direndogann", "SertSifre123!")
+    pid = tmp_db.add_property(
+        agent_id=admin_id,
+        title="Daire 12 İzmit",
+        rent=25000.0,
+        renewal_date="2027-01-01",
+        tenant_name="Eski Kiracı",
+        status="active",
+    )
+
+    # Kiracı çıktı
+    tmp_db.mark_property_vacant(
+        pid=pid,
+        exit_date="2026-10-15",
+        deposit_notes="Hasarsız 25.000 TL iade edildi",
+        handover_notes="2 anahtar teslim alındı, boyalı teslim edildi",
+        next_step="vacant",
+    )
+
+    vacant_prop = tmp_db.get_property(pid)
+    assert vacant_prop["status"] == "vacant"
+    assert vacant_prop["exit_date"] == "2026-10-15"
+    assert "25.000 TL" in vacant_prop["deposit_notes"]
+
+    # Yeni kiracı girdi
+    tmp_db.reassign_tenant(
+        pid=pid,
+        tenant_name="Yeni Kiracı Ali",
+        tenant_phone="05559998877",
+        rent=32000.0,
+        start_date="2026-11-01",
+        renewal_date="2027-11-01",
+        notes="Kefil alındı.",
+    )
+
+    reactivated = tmp_db.get_property(pid)
+    assert reactivated["status"] == "active"
+    assert reactivated["tenant_name"] == "Yeni Kiracı Ali"
+    assert reactivated["rent"] == 32000.0
+    assert reactivated["renewal_date"] == "2027-11-01"
